@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:0eOu7/QTYq8WxLGNGqZZ2LG5FVoEH0iz7rhojHreOJM="/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="FILESYSTEM_DISK" value="local"/>
+        <env name="VETOPS_INACTIVITY_TIMEOUT" value="15"/>
+        <env name="VETOPS_MAX_LOGIN_ATTEMPTS" value="10"/>
+        <env name="VETOPS_LOGIN_WINDOW_MINUTES" value="10"/>
+        <env name="VETOPS_CAPTCHA_AFTER" value="5"/>
+        <env name="VETOPS_AUDIT_RETENTION_YEARS" value="7"/>
+        <env name="VETOPS_OVERDUE_HOURS" value="2"/>
+        <env name="VETOPS_SAFETY_STOCK_DAYS" value="14"/>
+        <env name="VETOPS_DEPOSIT_RATE" value="0.20"/>
+        <env name="VETOPS_DEPOSIT_MIN" value="50.00"/>
+        <env name="VETOPS_STOCKTAKE_VARIANCE_PCT" value="5"/>
+        <env name="VETOPS_UPLOAD_MAX_MB" value="20"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

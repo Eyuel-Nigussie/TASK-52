@@ -1,0 +1,113 @@
+name: vetops
+
+networks:
+  vetops-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+
+services:
+
+  # ─── Application (PHP-FPM + Nginx via Supervisor) ───────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+    ports:
+      - "${VETOPS_HOST_PORT:-8000}:8000"
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor          # keep container vendor intact
+      - /var/www/html/bootstrap/cache # keep container cache intact
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - vetops-network
+
+  # ─── MySQL 8 ─────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: vetops
+      MYSQL_USER: vetops
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: root_secret
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "vetops", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - vetops-network
+
+  # ─── Queue Worker ────────────────────────────────────────────────────────────
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+      - /var/www/html/bootstrap/cache
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    networks:
+      - vetops-network
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--max-time=3600"]
+
+  # ─── Scheduler ───────────────────────────────────────────────────────────────
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+      - /var/www/html/bootstrap/cache
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    networks:
+      - vetops-network
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          php artisan schedule:run --verbose --no-interaction &
+          sleep 60
+        done
