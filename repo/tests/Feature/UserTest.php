@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Facility;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -44,6 +45,7 @@ class UserTest extends TestCase
     public function test_admin_can_create_user(): void
     {
         $this->actingAsAdmin();
+        $facility = Facility::factory()->create();
 
         $response = $this->postJson('/api/users', [
             'username'              => 'newclerk',
@@ -52,6 +54,7 @@ class UserTest extends TestCase
             'password'              => 'SecurePass123!',
             'password_confirmation' => 'SecurePass123!',
             'role'                  => 'inventory_clerk',
+            'facility_id'           => $facility->id,
         ]);
 
         $response->assertStatus(201)
@@ -123,7 +126,8 @@ class UserTest extends TestCase
     public function test_admin_can_update_user_role(): void
     {
         $this->actingAsAdmin();
-        $user = User::factory()->create(['role' => 'inventory_clerk']);
+        $facility = Facility::factory()->create();
+        $user = User::factory()->create(['role' => 'inventory_clerk', 'facility_id' => $facility->id]);
 
         $response = $this->putJson("/api/users/{$user->id}", [
             'role' => 'clinic_manager',

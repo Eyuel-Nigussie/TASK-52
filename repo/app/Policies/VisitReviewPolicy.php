@@ -22,7 +22,7 @@ class VisitReviewPolicy
         if ($user->facility_id !== null) {
             return $user->facility_id === $review->facility_id;
         }
-        return true;
+        return false;
     }
 
     public function publish(User $user, VisitReview $review): bool

@@ -18,8 +18,8 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_list_doctors(): void
     {
-        $this->actingAsTechnicianDoctor();
-        Doctor::factory()->count(3)->create();
+        $tech = $this->actingAsTechnicianDoctor();
+        Doctor::factory()->count(3)->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/doctors');
 
@@ -49,11 +49,10 @@ class DoctorPatientTest extends TestCase
 
     public function test_manager_can_create_doctor(): void
     {
-        $this->actingAsManager();
-        $facility = Facility::factory()->create();
+        $manager = $this->actingAsManager();
 
         $response = $this->postJson('/api/doctors', [
-            'facility_id'  => $facility->id,
+            'facility_id'  => $manager->facility_id,
             'external_key' => 'DR-MGR-001',
             'first_name'   => 'Bob',
             'last_name'    => 'Jones',
@@ -64,11 +63,10 @@ class DoctorPatientTest extends TestCase
 
     public function test_clerk_cannot_create_doctor(): void
     {
-        $this->actingAsInventoryClerk();
-        $facility = Facility::factory()->create();
+        $clerk = $this->actingAsInventoryClerk();
 
         $response = $this->postJson('/api/doctors', [
-            'facility_id'  => $facility->id,
+            'facility_id'  => $clerk->facility_id,
             'external_key' => 'DR-CLK-001',
             'first_name'   => 'Alice',
             'last_name'    => 'Brown',
@@ -79,8 +77,11 @@ class DoctorPatientTest extends TestCase
 
     public function test_non_admin_sees_masked_doctor_phone(): void
     {
-        $this->actingAsInventoryClerk();
-        $doctor = Doctor::factory()->create(['phone_encrypted' => encrypt('(555) 777-8888')]);
+        $clerk = $this->actingAsInventoryClerk();
+        $doctor = Doctor::factory()->create([
+            'facility_id'     => $clerk->facility_id,
+            'phone_encrypted' => encrypt('(555) 777-8888'),
+        ]);
 
         $response = $this->getJson("/api/doctors/{$doctor->id}");
 
@@ -127,8 +128,8 @@ class DoctorPatientTest extends TestCase
 
     public function test_manager_cannot_delete_doctor(): void
     {
-        $this->actingAsManager();
-        $doctor = Doctor::factory()->create();
+        $manager = $this->actingAsManager();
+        $doctor = Doctor::factory()->create(['facility_id' => $manager->facility_id]);
 
         $response = $this->deleteJson("/api/doctors/{$doctor->id}");
 
@@ -155,13 +156,14 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_filter_doctors_by_facility(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility1 = Facility::factory()->create();
-        $facility2 = Facility::factory()->create();
-        Doctor::factory()->count(2)->create(['facility_id' => $facility1->id]);
-        Doctor::factory()->count(1)->create(['facility_id' => $facility2->id]);
+        $tech = $this->actingAsTechnicianDoctor();
+        // Both facilities are different from the tech's facility; ScopesByFacility
+        // pins the tech to their own facility, so we create the expected doctors there.
+        Doctor::factory()->count(2)->create(['facility_id' => $tech->facility_id]);
+        // Doctors in an unrelated facility should not appear in the tech's results.
+        Doctor::factory()->count(1)->create();
 
-        $response = $this->getJson("/api/doctors?facility_id={$facility1->id}");
+        $response = $this->getJson("/api/doctors?facility_id={$tech->facility_id}");
 
         $response->assertStatus(200)
             ->assertJsonPath('total', 2);
@@ -171,8 +173,8 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_list_patients(): void
     {
-        $this->actingAsTechnicianDoctor();
-        Patient::factory()->count(4)->create();
+        $tech = $this->actingAsTechnicianDoctor();
+        Patient::factory()->count(4)->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/patients');
 
@@ -182,11 +184,10 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_create_patient(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
 
         $response = $this->postJson('/api/patients', [
-            'facility_id'  => $facility->id,
+            'facility_id'  => $tech->facility_id,
             'external_key' => 'PAT-TEST-001',
             'name'         => 'Buddy',
             'species'      => 'canine',
@@ -202,8 +203,11 @@ class DoctorPatientTest extends TestCase
 
     public function test_patient_owner_phone_masked_for_non_admin(): void
     {
-        $this->actingAsInventoryClerk();
-        $patient = Patient::factory()->create(['owner_phone_encrypted' => encrypt('(555) 111-2222')]);
+        $clerk = $this->actingAsInventoryClerk();
+        $patient = Patient::factory()->create([
+            'facility_id'           => $clerk->facility_id,
+            'owner_phone_encrypted' => encrypt('(555) 111-2222'),
+        ]);
 
         $response = $this->getJson("/api/patients/{$patient->id}");
 
@@ -224,8 +228,8 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_update_patient(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $patient = Patient::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
+        $patient = Patient::factory()->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->putJson("/api/patients/{$patient->id}", [
             'species' => 'feline',
@@ -249,8 +253,8 @@ class DoctorPatientTest extends TestCase
 
     public function test_clerk_cannot_delete_patient(): void
     {
-        $this->actingAsInventoryClerk();
-        $patient = Patient::factory()->create();
+        $clerk = $this->actingAsInventoryClerk();
+        $patient = Patient::factory()->create(['facility_id' => $clerk->facility_id]);
 
         $response = $this->deleteJson("/api/patients/{$patient->id}");
 
@@ -259,11 +263,19 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_search_patients_by_name(): void
     {
-        $this->actingAsTechnicianDoctor();
+        $tech = $this->actingAsTechnicianDoctor();
         // Pin both name and owner_name so faker-generated strings can't
         // accidentally match the search term.
-        Patient::factory()->create(['name' => 'Uniquepetname', 'owner_name' => 'Nomatch Jones']);
-        Patient::factory()->create(['name' => 'Whiskers', 'owner_name' => 'Other Person']);
+        Patient::factory()->create([
+            'facility_id' => $tech->facility_id,
+            'name'        => 'Uniquepetname',
+            'owner_name'  => 'Nomatch Jones',
+        ]);
+        Patient::factory()->create([
+            'facility_id' => $tech->facility_id,
+            'name'        => 'Whiskers',
+            'owner_name'  => 'Other Person',
+        ]);
 
         $response = $this->getJson('/api/patients?search=Uniquepetname');
 
@@ -274,9 +286,17 @@ class DoctorPatientTest extends TestCase
 
     public function test_can_search_patients_by_owner_name(): void
     {
-        $this->actingAsTechnicianDoctor();
-        Patient::factory()->create(['name' => 'Petzero', 'owner_name' => 'Zzunique Owner']);
-        Patient::factory()->create(['name' => 'Petone', 'owner_name' => 'Other Person']);
+        $tech = $this->actingAsTechnicianDoctor();
+        Patient::factory()->create([
+            'facility_id' => $tech->facility_id,
+            'name'        => 'Petzero',
+            'owner_name'  => 'Zzunique Owner',
+        ]);
+        Patient::factory()->create([
+            'facility_id' => $tech->facility_id,
+            'name'        => 'Petone',
+            'owner_name'  => 'Other Person',
+        ]);
 
         $response = $this->getJson('/api/patients?search=Zzunique');
 

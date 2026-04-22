@@ -29,12 +29,12 @@ class AuditLogController extends Controller
             ->when($request->filled('to'), fn($q) => $q->where('created_at', '<=', $request->to))
             ->orderByDesc('created_at');
 
-        // Tenant scoping — managers pinned to a facility only see audit rows
-        // tagged with that same facility_id. system_admin (and legacy
-        // unassigned accounts, which UserController now blocks from being
-        // created) see the full log.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->where('facility_id', $user->facility_id);
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('facility_id', $user->facility_id);
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 50)));
@@ -52,8 +52,12 @@ class AuditLogController extends Controller
             ->when($request->filled('to'), fn($q) => $q->where('created_at', '<=', $request->to))
             ->orderByDesc('created_at');
 
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->where('facility_id', $user->facility_id);
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('facility_id', $user->facility_id);
+            }
         }
 
         $logs = $query->get();

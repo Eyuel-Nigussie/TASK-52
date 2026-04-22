@@ -37,9 +37,8 @@ class ServiceOrderTest extends TestCase
 
     public function test_can_list_service_orders(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        ServiceOrder::factory()->count(3)->create(['facility_id' => $facility->id]);
+        $tech = $this->actingAsTechnicianDoctor();
+        ServiceOrder::factory()->count(3)->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/service-orders');
 
@@ -49,11 +48,10 @@ class ServiceOrderTest extends TestCase
 
     public function test_can_create_simple_service_order(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
 
         $response = $this->postJson('/api/service-orders', [
-            'facility_id'          => $facility->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'deduct_at_close',
         ]);
 
@@ -64,12 +62,11 @@ class ServiceOrderTest extends TestCase
 
     public function test_can_create_order_with_lock_at_creation_strategy(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        [$item, $storeroom] = $this->setupStockLevel(50.0, $facility->id);
+        $tech = $this->actingAsTechnicianDoctor();
+        [$item, $storeroom] = $this->setupStockLevel(50.0, $tech->facility_id);
 
         $response = $this->postJson('/api/service-orders', [
-            'facility_id'          => $facility->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'lock_at_creation',
             'items'                => [
                 [
@@ -89,12 +86,11 @@ class ServiceOrderTest extends TestCase
 
     public function test_reservation_fails_when_insufficient_stock(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        [$item, $storeroom] = $this->setupStockLevel(5.0, $facility->id);
+        $tech = $this->actingAsTechnicianDoctor();
+        [$item, $storeroom] = $this->setupStockLevel(5.0, $tech->facility_id);
 
         $response = $this->postJson('/api/service-orders', [
-            'facility_id'          => $facility->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'lock_at_creation',
             'items'                => [
                 [
@@ -110,9 +106,8 @@ class ServiceOrderTest extends TestCase
 
     public function test_can_show_service_order_with_reservations(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $order    = ServiceOrder::factory()->create(['facility_id' => $facility->id]);
+        $tech  = $this->actingAsTechnicianDoctor();
+        $order = ServiceOrder::factory()->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson("/api/service-orders/{$order->id}");
 
@@ -123,10 +118,9 @@ class ServiceOrderTest extends TestCase
 
     public function test_technician_can_close_service_order(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $order    = ServiceOrder::factory()->create([
-            'facility_id'          => $facility->id,
+        $tech  = $this->actingAsTechnicianDoctor();
+        $order = ServiceOrder::factory()->create([
+            'facility_id'          => $tech->facility_id,
             'status'               => 'open',
             'reservation_strategy' => 'deduct_at_close',
         ]);
@@ -139,10 +133,9 @@ class ServiceOrderTest extends TestCase
 
     public function test_cannot_close_already_closed_order(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $order    = ServiceOrder::factory()->create([
-            'facility_id' => $facility->id,
+        $tech  = $this->actingAsTechnicianDoctor();
+        $order = ServiceOrder::factory()->create([
+            'facility_id' => $tech->facility_id,
             'status'      => 'closed',
         ]);
 
@@ -154,14 +147,13 @@ class ServiceOrderTest extends TestCase
 
     public function test_can_add_reservation_to_open_order(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $order    = ServiceOrder::factory()->create([
-            'facility_id'          => $facility->id,
+        $tech  = $this->actingAsTechnicianDoctor();
+        $order = ServiceOrder::factory()->create([
+            'facility_id'          => $tech->facility_id,
             'status'               => 'open',
             'reservation_strategy' => 'lock_at_creation',
         ]);
-        [$item, $storeroom] = $this->setupStockLevel(30.0, $facility->id);
+        [$item, $storeroom] = $this->setupStockLevel(30.0, $tech->facility_id);
 
         $response = $this->postJson("/api/service-orders/{$order->id}/reservations", [
             'item_id'      => $item->id,
@@ -178,13 +170,12 @@ class ServiceOrderTest extends TestCase
 
     public function test_filter_orders_by_facility(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility1 = Facility::factory()->create();
-        $facility2 = Facility::factory()->create();
-        ServiceOrder::factory()->count(2)->create(['facility_id' => $facility1->id]);
-        ServiceOrder::factory()->count(3)->create(['facility_id' => $facility2->id]);
+        $tech      = $this->actingAsTechnicianDoctor();
+        $facilityB = Facility::factory()->create();
+        ServiceOrder::factory()->count(2)->create(['facility_id' => $tech->facility_id]);
+        ServiceOrder::factory()->count(3)->create(['facility_id' => $facilityB->id]);
 
-        $response = $this->getJson("/api/service-orders?facility_id={$facility1->id}");
+        $response = $this->getJson("/api/service-orders?facility_id={$tech->facility_id}");
 
         $response->assertStatus(200)
             ->assertJsonPath('total', 2);
@@ -192,13 +183,12 @@ class ServiceOrderTest extends TestCase
 
     public function test_cannot_reserve_from_storeroom_of_another_facility_on_create(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facilityA = Facility::factory()->create();
+        $tech      = $this->actingAsTechnicianDoctor();
         $facilityB = Facility::factory()->create();
         [$item, $storeroomB] = $this->setupStockLevel(50.0, $facilityB->id);
 
         $response = $this->postJson('/api/service-orders', [
-            'facility_id'          => $facilityA->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'lock_at_creation',
             'items'                => [
                 [
@@ -215,11 +205,10 @@ class ServiceOrderTest extends TestCase
 
     public function test_cannot_add_reservation_from_storeroom_of_another_facility(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facilityA = Facility::factory()->create();
+        $tech      = $this->actingAsTechnicianDoctor();
         $facilityB = Facility::factory()->create();
         $order     = ServiceOrder::factory()->create([
-            'facility_id'          => $facilityA->id,
+            'facility_id'          => $tech->facility_id,
             'status'               => 'open',
             'reservation_strategy' => 'lock_at_creation',
         ]);
@@ -237,10 +226,9 @@ class ServiceOrderTest extends TestCase
 
     public function test_filter_orders_by_status(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        ServiceOrder::factory()->count(2)->create(['facility_id' => $facility->id, 'status' => 'open']);
-        ServiceOrder::factory()->count(1)->create(['facility_id' => $facility->id, 'status' => 'closed']);
+        $tech = $this->actingAsTechnicianDoctor();
+        ServiceOrder::factory()->count(2)->create(['facility_id' => $tech->facility_id, 'status' => 'open']);
+        ServiceOrder::factory()->count(1)->create(['facility_id' => $tech->facility_id, 'status' => 'closed']);
 
         $response = $this->getJson('/api/service-orders?status=open');
 

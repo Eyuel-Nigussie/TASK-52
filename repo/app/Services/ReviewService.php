@@ -92,8 +92,9 @@ class ReviewService
 
     public function hide(VisitReview $review, int $managerId, string $reason): VisitReview
     {
+        $oldStatus = $review->status;
         $review->update(['status' => 'hidden']);
-        $this->audit->logModel('review.hide', $review, ['status' => $review->status], ['status' => 'hidden', 'reason' => $reason]);
+        $this->audit->logModel('review.hide', $review, ['status' => $oldStatus], ['status' => 'hidden', 'reason' => $reason]);
         return $review->refresh();
     }
 

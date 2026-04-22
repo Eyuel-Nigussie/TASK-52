@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Facility;
 use App\Models\InventoryItem;
 use App\Models\StockLevel;
 use App\Models\Storeroom;
@@ -83,9 +84,10 @@ class InventoryItemPolicyTest extends TestCase
     public function test_low_stock_alerts_authorize_viewAny(): void
     {
         $this->actingAsTechnicianDoctor();
+        $facility = Facility::factory()->create();
 
-        $this->getJson('/api/inventory/low-stock-alerts?facility_id=1')
-            ->assertStatus(200); // either 200 with empty list or 422 if facility missing — both prove authorize() passed
+        $this->getJson("/api/inventory/low-stock-alerts?facility_id={$facility->id}")
+            ->assertStatus(200);
     }
 
     public function test_ledger_endpoint_is_policy_guarded(): void

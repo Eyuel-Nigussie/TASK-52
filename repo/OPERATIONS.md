@@ -381,7 +381,79 @@ previous bundle. Never roll back migrations on production without DBA review.
 
 ---
 
-## 12. Contacts & Escalation
+## 12. CSRF Deployment Verification
+
+VetOps relies on `SameSite=Strict` session cookies rather than CSRF tokens for
+browser clients. This section documents the steps to verify that the protection
+is in place after each production deployment.
+
+### 12.1 Cookie attributes
+
+After a successful login, inspect the `vetops_session` cookie in browser
+DevTools (Application → Cookies) or via `curl -v`:
+
+| Attribute     | Required value     | Where configured                            |
+|---------------|--------------------|---------------------------------------------|
+| `SameSite`    | `Strict`           | `AuthController::sessionCookie()` (line ~110)|
+| `HttpOnly`    | Present            | `AuthController::sessionCookie()`           |
+| `Secure`      | Present            | Set when `$request->isSecure()` is true     |
+| `Path`        | `/`                | `AuthController::sessionCookie()`           |
+
+**Checklist:**
+
+- [ ] `Set-Cookie` response header includes `SameSite=Strict`
+- [ ] `Set-Cookie` response header includes `HttpOnly`
+- [ ] `Set-Cookie` response header includes `Secure` (HTTPS deployments only)
+- [ ] Cookie is NOT readable from `document.cookie` in the browser console
+
+### 12.2 CORS and origin validation
+
+- [ ] `config/cors.php` → `allowed_origins` lists only the production SPA
+  origin (no wildcard `*`)
+- [ ] `Access-Control-Allow-Credentials: true` is present in CORS responses
+  (required for `withCredentials: true` axios requests)
+- [ ] Cross-origin `POST /api/auth/login` from a third-party origin is
+  rejected with HTTP 403 by the CORS middleware
+
+### 12.3 Axios client configuration
+
+- [ ] `withCredentials: true` is set in `resources/js/api/client.js`
+  `axios.create()` (prevents cookies from being silently dropped)
+- [ ] No `X-XSRF-TOKEN` header override that could weaken or bypass the
+  SameSite boundary
+
+### 12.4 Nginx / reverse-proxy headers
+
+- [ ] Proxy passes `X-Forwarded-Proto: https` so Laravel detects HTTPS and
+  sets the `Secure` cookie flag (`$request->isSecure()` must return `true`)
+- [ ] `TRUSTED_PROXIES` in `.env` is set to the actual proxy IP or CIDR
+  (prevents IP spoofing via `X-Forwarded-For`)
+- [ ] No `SameSite=None` override anywhere in Nginx config
+
+### 12.5 Smoke test (run after every production deploy)
+
+```bash
+# 1. Login and capture the cookie
+curl -c /tmp/vetops_cookies.txt -X POST https://<host>/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"smoke_test_user","password":"<pw>"}' -v 2>&1 | grep -i set-cookie
+
+# 2. Confirm SameSite=Strict is present in the output above
+
+# 3. Attempt a simulated cross-origin state-changing request (must fail)
+curl -X POST https://<host>/api/auth/logout \
+  -H "Origin: https://evil.example.com" \
+  -b /tmp/vetops_cookies.txt -v 2>&1 | grep -E "HTTP|Access-Control"
+# Expected: 403 or missing Access-Control-Allow-Origin for the evil origin
+
+# 4. Confirm cookie is NOT returned on a plain GET from a different origin
+curl -X GET https://<host>/api/auth/me \
+  -H "Origin: https://evil.example.com" 2>&1 | grep -i "access-control"
+```
+
+---
+
+## 13. Contacts & Escalation
 
 Replace the placeholders below during provisioning:
 

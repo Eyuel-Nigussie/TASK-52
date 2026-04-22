@@ -19,14 +19,10 @@ class PatientPolicy
         if ($user->isAdmin()) {
             return true;
         }
-        // Non-admin with facility assignment: same-facility only.
-        if ($user->facility_id !== null) {
-            return $user->facility_id === $patient->facility_id;
+        if ($user->facility_id === null) {
+            return false;
         }
-        // Legacy unassigned non-admin account. New users with null facility
-        // are blocked at creation by UserController; legacy rows retain the
-        // permissive behavior so existing tokens don't lock out silently.
-        return true;
+        return $user->facility_id === $patient->facility_id;
     }
 
     public function viewUnmaskedPhone(User $user, Patient $patient): bool

@@ -15,7 +15,7 @@ class FacilityTest extends TestCase
 
     public function test_authenticated_user_can_list_facilities(): void
     {
-        $this->actingAsTechnicianDoctor();
+        $this->actingAsAdmin();
         Facility::factory()->count(3)->create();
 
         $response = $this->getJson('/api/facilities');
@@ -83,8 +83,9 @@ class FacilityTest extends TestCase
 
     public function test_non_admin_sees_masked_phone(): void
     {
-        $this->actingAsManager();
-        $facility = Facility::factory()->create(['phone_encrypted' => encrypt('(555) 123-4567')]);
+        $manager = $this->actingAsManager();
+        $facility = \App\Models\Facility::findOrFail($manager->facility_id);
+        $facility->update(['phone_encrypted' => encrypt('(555) 123-4567')]);
 
         $response = $this->getJson("/api/facilities/{$facility->id}");
 
@@ -159,7 +160,7 @@ class FacilityTest extends TestCase
 
     public function test_search_by_name_filters_results(): void
     {
-        $this->actingAsTechnicianDoctor();
+        $this->actingAsAdmin();
         Facility::factory()->create(['name' => 'Sunrise Veterinary Hospital']);
         Facility::factory()->create(['name' => 'Downtown Pet Clinic']);
 
@@ -184,11 +185,10 @@ class FacilityTest extends TestCase
 
     public function test_show_loads_departments(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        Department::factory()->create(['facility_id' => $facility->id]);
+        $tech = $this->actingAsTechnicianDoctor();
+        Department::factory()->create(['facility_id' => $tech->facility_id]);
 
-        $response = $this->getJson("/api/facilities/{$facility->id}");
+        $response = $this->getJson("/api/facilities/{$tech->facility_id}");
 
         $response->assertStatus(200);
         $this->assertArrayHasKey('departments', $response->json());

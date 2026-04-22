@@ -103,9 +103,12 @@ class ServiceController extends Controller
         $user = $request->user();
         $query = $service->pricings()->with('facility');
 
-        // Non-admin users see only pricings for their own facility.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->where('facility_id', $user->facility_id);
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('facility_id', $user->facility_id);
+            }
         } elseif ($request->filled('facility_id')) {
             $query->where('facility_id', $request->facility_id);
         }
@@ -127,8 +130,13 @@ class ServiceController extends Controller
         ]);
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null && (int) $data['facility_id'] !== $user->facility_id) {
-            abort(403, 'Cannot set pricing for another facility.');
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
+            if ((int) $data['facility_id'] !== $user->facility_id) {
+                abort(403, 'Cannot set pricing for another facility.');
+            }
         }
 
         $data['service_id'] = $service->id;

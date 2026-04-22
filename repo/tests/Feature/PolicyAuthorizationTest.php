@@ -187,9 +187,10 @@ class PolicyAuthorizationTest extends TestCase
 
     public function test_merge_request_requires_manager(): void
     {
-        $manager = User::factory()->manager()->create();
-        $clerk   = User::factory()->inventoryClerk()->create();
-        $mr = MergeRequest::factory()->create();
+        $facility = \App\Models\Facility::factory()->create();
+        $manager  = User::factory()->manager()->create(['facility_id' => $facility->id]);
+        $clerk    = User::factory()->inventoryClerk()->create(['facility_id' => $facility->id]);
+        $mr       = MergeRequest::factory()->create(['facility_id' => $facility->id]);
 
         $this->assertTrue($manager->can('approve', $mr));
         $this->assertFalse($clerk->can('view', $mr));

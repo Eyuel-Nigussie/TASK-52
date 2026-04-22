@@ -56,8 +56,13 @@ class ServiceOrderController extends Controller
         ]);
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null && (int) $data['facility_id'] !== $user->facility_id) {
-            abort(403, 'Cannot create orders for another facility.');
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
+            if ((int) $data['facility_id'] !== $user->facility_id) {
+                abort(403, 'Cannot create orders for another facility.');
+            }
         }
 
         // Cross-entity facility consistency — any referenced patient/doctor

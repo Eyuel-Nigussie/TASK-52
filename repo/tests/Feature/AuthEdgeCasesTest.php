@@ -25,7 +25,7 @@ class AuthEdgeCasesTest extends TestCase
         $user  = User::factory()->create(['password' => Hash::make('RefreshTest12!')]);
         $token = $user->createToken('api-token')->plainTextToken;
 
-        $refresh = $this->withCookie('vetops_session', $token)->postJson('/api/auth/refresh');
+        $refresh = $this->withRefreshCookie($token)->postJson('/api/auth/refresh');
         $refresh->assertStatus(200);
         $newToken = $refresh->json('token');
 

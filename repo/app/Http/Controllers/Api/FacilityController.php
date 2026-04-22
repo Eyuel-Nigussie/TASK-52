@@ -32,9 +32,12 @@ class FacilityController extends Controller
             ->withCount('departments')
             ->orderBy('name');
 
-        // Scoped user sees only their own facility; admin sees all.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->where('id', $user->facility_id);
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('id', $user->facility_id);
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 20)));
@@ -138,7 +141,16 @@ class FacilityController extends Controller
     {
         $this->authorize('viewAny', Facility::class);
         $this->audit->logExport('facility');
-        $csv = $this->importService->export('facility');
+
+        $user = $request->user();
+        if (!$user->isAdmin() && $user->facility_id === null) {
+            abort(403, 'Account has no facility assignment.');
+        }
+        $filters = !$user->isAdmin()
+            ? ['facility_id' => $user->facility_id]
+            : [];
+
+        $csv = $this->importService->export('facility', $filters);
 
         $stream = function () use ($csv) {
             echo $csv;

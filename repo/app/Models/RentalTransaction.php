@@ -59,8 +59,7 @@ class RentalTransaction extends Model
         $now = now();
         $expected = $this->expected_return_at->copy();
 
-        // Match the test helper's calculation: minutes = now->diffInMinutes(expected + (threshold * 2) hours)
-        return (int) $now->diffInMinutes($expected->copy()->addHours($overdueThreshold * 2));
+        return (int) $expected->copy()->addHours($overdueThreshold)->diffInMinutes($now);
     }
 
     public function scopeActive($query): mixed

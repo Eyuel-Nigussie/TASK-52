@@ -68,6 +68,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -90,6 +91,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -203,6 +205,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -232,6 +235,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -253,6 +257,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -291,6 +296,7 @@ class AuthTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -312,6 +318,88 @@ class AuthTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['captcha_token']);
+    }
+
+    /* ---- per-workstation throttle tests ---- */
+
+    public function test_device_id_is_stored_as_throttle_key_on_login_attempt(): void
+    {
+        User::factory()->create(['username' => 'testuser2']);
+
+        $this->postJson('/api/auth/login', [
+            'username' => 'testuser2',
+            'password' => 'wrong',
+        ], ['X-Device-ID' => 'ws-UNIT-001']);
+
+        $this->assertDatabaseHas('login_attempts', [
+            'username'     => 'testuser2',
+            'device_id'    => 'ws-UNIT-001',
+            'throttle_key' => 'ws-UNIT-001',
+            'success'      => false,
+        ]);
+    }
+
+    public function test_throttle_keyed_by_device_id_not_ip(): void
+    {
+        $captchaAfter = (int) config('vetops.captcha_after', 5);
+
+        // Seed failures for a specific workstation — stored under its device key.
+        for ($i = 0; $i < $captchaAfter; $i++) {
+            LoginAttempt::create([
+                'username'     => 'baduser',
+                'ip_address'   => '10.0.0.50',
+                'throttle_key' => 'ws-LOCKED-001',
+                'success'      => false,
+                'attempted_at' => now(),
+            ]);
+        }
+
+        // Same IP, different device ID — must NOT be throttled.
+        $response = $this->getJson('/api/auth/captcha-status', ['X-Device-ID' => 'ws-CLEAN-002']);
+        $response->assertStatus(200)->assertJsonPath('captcha_required', false);
+    }
+
+    public function test_same_device_id_from_different_ips_shares_throttle(): void
+    {
+        $captchaAfter = (int) config('vetops.captcha_after', 5);
+        $deviceId = 'ws-SHARED-003';
+
+        // Failures arrive from two different IPs but the same workstation ID.
+        for ($i = 0; $i < $captchaAfter; $i++) {
+            LoginAttempt::create([
+                'username'     => 'baduser',
+                'ip_address'   => $i % 2 === 0 ? '192.168.1.10' : '192.168.1.11',
+                'device_id'    => $deviceId,
+                'throttle_key' => $deviceId,
+                'success'      => false,
+                'attempted_at' => now(),
+            ]);
+        }
+
+        // Captcha status must be required for that device ID.
+        $response = $this->getJson('/api/auth/captcha-status', ['X-Device-ID' => $deviceId]);
+        $response->assertStatus(200)->assertJsonPath('captcha_required', true);
+    }
+
+    public function test_ip_fallback_throttle_when_no_device_id(): void
+    {
+        $ip = '127.0.0.1';
+        $captchaAfter = (int) config('vetops.captcha_after', 5);
+
+        // Seed failures keyed by IP (no device ID).
+        for ($i = 0; $i < $captchaAfter; $i++) {
+            LoginAttempt::create([
+                'username'     => 'baduser',
+                'ip_address'   => $ip,
+                'throttle_key' => $ip,
+                'success'      => false,
+                'attempted_at' => now(),
+            ]);
+        }
+
+        // No X-Device-ID header — falls back to IP-based key.
+        $response = $this->getJson('/api/auth/captcha-status');
+        $response->assertStatus(200)->assertJsonPath('captcha_required', true);
     }
 
     public function test_me_endpoint_loads_facility_and_department(): void
@@ -352,7 +440,7 @@ class AuthTest extends TestCase
         $user = User::factory()->create(['password' => Hash::make('Password123!')]);
         $token = $user->createToken('api-token')->plainTextToken;
 
-        $response = $this->withCookie('vetops_session',$token)
+        $response = $this->withRefreshCookie($token)
             ->postJson('/api/auth/refresh');
 
         $response->assertStatus(200)
@@ -363,7 +451,7 @@ class AuthTest extends TestCase
 
     public function test_refresh_rejects_invalid_session_cookie(): void
     {
-        $response = $this->withCookie('vetops_session','not-a-valid-sanctum-token')
+        $response = $this->withRefreshCookie('not-a-valid-sanctum-token')
             ->postJson('/api/auth/refresh');
 
         $response->assertStatus(422);
@@ -374,7 +462,7 @@ class AuthTest extends TestCase
         $user = User::factory()->create(['active' => false]);
         $token = $user->createToken('api-token')->plainTextToken;
 
-        $response = $this->withCookie('vetops_session',$token)
+        $response = $this->withRefreshCookie($token)
             ->postJson('/api/auth/refresh');
 
         $response->assertStatus(422);

@@ -130,7 +130,7 @@ class InventoryService
             $outEntry = StockLedger::create([
                 'item_id'           => $item->id,
                 'storeroom_id'      => $fromStoreroom->id,
-                'transaction_type'  => 'outbound',
+                'transaction_type'  => 'transfer',
                 'quantity'          => $quantity,
                 'balance_after'     => $fromBalanceAfter,
                 'from_storeroom_id' => $fromStoreroom->id,
@@ -142,7 +142,7 @@ class InventoryService
             $inEntry = StockLedger::create([
                 'item_id'           => $item->id,
                 'storeroom_id'      => $toStoreroom->id,
-                'transaction_type'  => 'inbound',
+                'transaction_type'  => 'transfer',
                 'quantity'          => $quantity,
                 'balance_after'     => $toBalanceAfter,
                 'from_storeroom_id' => $fromStoreroom->id,

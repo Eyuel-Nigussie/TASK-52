@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Encryption\Encrypter;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -27,6 +30,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Key the login rate limiter by workstation ID (X-Device-ID header) so
+        // that terminals on a shared NAT/IP are throttled independently. Falls
+        // back to IP when no header is present (e.g. CLI/API clients).
+        RateLimiter::for('login', function (Request $request) {
+            $key = $request->header('X-Device-ID') ?: $request->ip();
+            return Limit::perMinutes(
+                (int) config('vetops.login_window_minutes', 10),
+                (int) config('vetops.max_login_attempts', 10),
+            )->by($key);
+        });
+
         $pii = config('vetops.encryption_key');
         if (is_string($pii) && $pii !== '') {
             $key = $this->decodeKey($pii);

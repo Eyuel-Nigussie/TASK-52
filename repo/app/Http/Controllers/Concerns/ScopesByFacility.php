@@ -13,18 +13,19 @@ use Illuminate\Database\Eloquent\Builder;
  * Rules:
  *   - system_admin sees everything; may narrow by `facility_id` query param.
  *   - A non-admin user with a facility_id is pinned to that facility.
- *   - A non-admin user with facility_id = null is treated as an unassigned
- *     legacy account. The UserController now rejects creating/updating such
- *     accounts for non-admin roles, so this path only triggers for data
- *     created before the enforcement was added. We keep the legacy "see
- *     everything" behavior here to avoid silently emptying lists for those
- *     accounts; fresh deployments cannot land in this state.
+ *   - A non-admin user with facility_id = null receives an empty result set.
+ *     UserController rejects creating/updating non-admin accounts without a
+ *     facility assignment; this path is a hard deny-all safety net.
  */
 trait ScopesByFacility
 {
     protected function applyFacilityScope(Builder $query, ?User $user, ?int $requestedFacilityId = null, string $column = 'facility_id'): Builder
     {
-        if ($user !== null && !$user->isAdmin() && $user->facility_id !== null) {
+        if ($user !== null && !$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                // Non-admin with no facility assignment must not see any data.
+                return $query->whereRaw('1 = 0');
+            }
             return $query->where($column, $user->facility_id);
         }
 

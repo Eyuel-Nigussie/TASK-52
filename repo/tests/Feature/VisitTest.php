@@ -15,9 +15,9 @@ class VisitTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function makeVisitData(): array
+    private function makeVisitData(?int $facilityId = null): array
     {
-        $facility = Facility::factory()->create();
+        $facility = $facilityId ? Facility::findOrFail($facilityId) : Facility::factory()->create();
         $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
         $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
 
@@ -32,8 +32,8 @@ class VisitTest extends TestCase
 
     public function test_can_list_visits(): void
     {
-        $this->actingAsTechnicianDoctor();
-        Visit::factory()->count(3)->create();
+        $tech = $this->actingAsTechnicianDoctor();
+        Visit::factory()->count(3)->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/visits');
 
@@ -43,8 +43,8 @@ class VisitTest extends TestCase
 
     public function test_can_create_visit(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $data = $this->makeVisitData();
+        $tech = $this->actingAsTechnicianDoctor();
+        $data = $this->makeVisitData($tech->facility_id);
 
         $response = $this->postJson('/api/visits', $data);
 
@@ -58,8 +58,8 @@ class VisitTest extends TestCase
 
     public function test_can_show_visit_with_relationships(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = Visit::factory()->create();
+        $tech  = $this->actingAsTechnicianDoctor();
+        $visit = Visit::factory()->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson("/api/visits/{$visit->id}");
 
@@ -70,8 +70,8 @@ class VisitTest extends TestCase
 
     public function test_can_update_visit_status(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = Visit::factory()->create(['status' => 'scheduled']);
+        $tech  = $this->actingAsTechnicianDoctor();
+        $visit = Visit::factory()->create(['status' => 'scheduled', 'facility_id' => $tech->facility_id]);
 
         $response = $this->putJson("/api/visits/{$visit->id}", ['status' => 'completed']);
 
@@ -81,8 +81,8 @@ class VisitTest extends TestCase
 
     public function test_can_cancel_visit(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = Visit::factory()->create(['status' => 'scheduled']);
+        $tech  = $this->actingAsTechnicianDoctor();
+        $visit = Visit::factory()->create(['status' => 'scheduled', 'facility_id' => $tech->facility_id]);
 
         $response = $this->putJson("/api/visits/{$visit->id}", ['status' => 'cancelled']);
 
@@ -92,8 +92,8 @@ class VisitTest extends TestCase
 
     public function test_invalid_status_rejected(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = Visit::factory()->create();
+        $tech  = $this->actingAsTechnicianDoctor();
+        $visit = Visit::factory()->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->putJson("/api/visits/{$visit->id}", ['status' => 'invalid_status']);
 
@@ -103,15 +103,15 @@ class VisitTest extends TestCase
 
     public function test_can_filter_visits_by_doctor(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $doctor1 = Doctor::factory()->create(['facility_id' => $facility->id]);
-        $doctor2 = Doctor::factory()->create(['facility_id' => $facility->id]);
-        $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
+        $tech    = $this->actingAsTechnicianDoctor();
+        $fid     = $tech->facility_id;
+        $doctor1 = Doctor::factory()->create(['facility_id' => $fid]);
+        $doctor2 = Doctor::factory()->create(['facility_id' => $fid]);
+        $patient = Patient::factory()->create(['facility_id' => $fid]);
 
-        Visit::factory()->create(['doctor_id' => $doctor1->id, 'patient_id' => $patient->id, 'facility_id' => $facility->id]);
-        Visit::factory()->create(['doctor_id' => $doctor2->id, 'patient_id' => $patient->id, 'facility_id' => $facility->id]);
-        Visit::factory()->create(['doctor_id' => $doctor1->id, 'patient_id' => $patient->id, 'facility_id' => $facility->id]);
+        Visit::factory()->create(['doctor_id' => $doctor1->id, 'patient_id' => $patient->id, 'facility_id' => $fid]);
+        Visit::factory()->create(['doctor_id' => $doctor2->id, 'patient_id' => $patient->id, 'facility_id' => $fid]);
+        Visit::factory()->create(['doctor_id' => $doctor1->id, 'patient_id' => $patient->id, 'facility_id' => $fid]);
 
         $response = $this->getJson("/api/visits?doctor_id={$doctor1->id}");
 
@@ -121,14 +121,14 @@ class VisitTest extends TestCase
 
     public function test_can_filter_visits_by_patient(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $patient1 = Patient::factory()->create(['facility_id' => $facility->id]);
-        $patient2 = Patient::factory()->create(['facility_id' => $facility->id]);
-        $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
+        $tech     = $this->actingAsTechnicianDoctor();
+        $fid      = $tech->facility_id;
+        $patient1 = Patient::factory()->create(['facility_id' => $fid]);
+        $patient2 = Patient::factory()->create(['facility_id' => $fid]);
+        $doctor   = Doctor::factory()->create(['facility_id' => $fid]);
 
-        Visit::factory()->create(['patient_id' => $patient1->id, 'doctor_id' => $doctor->id, 'facility_id' => $facility->id]);
-        Visit::factory()->create(['patient_id' => $patient2->id, 'doctor_id' => $doctor->id, 'facility_id' => $facility->id]);
+        Visit::factory()->create(['patient_id' => $patient1->id, 'doctor_id' => $doctor->id, 'facility_id' => $fid]);
+        Visit::factory()->create(['patient_id' => $patient2->id, 'doctor_id' => $doctor->id, 'facility_id' => $fid]);
 
         $response = $this->getJson("/api/visits?patient_id={$patient1->id}");
 
@@ -138,19 +138,19 @@ class VisitTest extends TestCase
 
     public function test_can_filter_visits_by_date_range(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
-        $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
+        $tech    = $this->actingAsTechnicianDoctor();
+        $fid     = $tech->facility_id;
+        $patient = Patient::factory()->create(['facility_id' => $fid]);
+        $doctor  = Doctor::factory()->create(['facility_id' => $fid]);
 
         Visit::factory()->create([
-            'facility_id' => $facility->id,
+            'facility_id' => $fid,
             'patient_id'  => $patient->id,
             'doctor_id'   => $doctor->id,
             'visit_date'  => '2024-01-15',
         ]);
         Visit::factory()->create([
-            'facility_id' => $facility->id,
+            'facility_id' => $fid,
             'patient_id'  => $patient->id,
             'doctor_id'   => $doctor->id,
             'visit_date'  => '2024-06-15',
@@ -164,12 +164,12 @@ class VisitTest extends TestCase
 
     public function test_patient_must_exist(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
+        $tech   = $this->actingAsTechnicianDoctor();
+        $fid    = $tech->facility_id;
+        $doctor = Doctor::factory()->create(['facility_id' => $fid]);
 
         $response = $this->postJson('/api/visits', [
-            'facility_id' => $facility->id,
+            'facility_id' => $fid,
             'patient_id'  => 99999,
             'doctor_id'   => $doctor->id,
             'visit_date'  => now()->toDateString(),

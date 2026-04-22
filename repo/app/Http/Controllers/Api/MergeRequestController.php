@@ -28,12 +28,12 @@ class MergeRequestController extends Controller
             ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
             ->orderByDesc('created_at');
 
-        // Facility scoping — managers only see merge requests that belong to
-        // their own facility. system_admin sees all. Requests with a null
-        // facility_id (pre-migration legacy rows) remain visible to admins
-        // only; scoped managers explicitly cannot see them.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->where('facility_id', $user->facility_id);
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where('facility_id', $user->facility_id);
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 20)));
@@ -64,8 +64,13 @@ class MergeRequestController extends Controller
         $facilityId = $this->resolveFacilityForSource($data['entity_type'], (int) $data['source_id']);
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null && $facilityId !== null && $facilityId !== $user->facility_id) {
-            abort(403, 'Cannot create merge requests for another facility.');
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
+            if ($facilityId !== null && $facilityId !== $user->facility_id) {
+                abort(403, 'Cannot create merge requests for another facility.');
+            }
         }
 
         $merge = MergeRequest::create([

@@ -16,9 +16,9 @@ class ReviewTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createCompletedVisit(): Visit
+    private function createCompletedVisit(?int $facilityId = null): Visit
     {
-        $facility = Facility::factory()->create();
+        $facility = $facilityId !== null ? Facility::findOrFail($facilityId) : Facility::factory()->create();
         $doctor = Doctor::factory()->create(['facility_id' => $facility->id]);
         $patient = Patient::factory()->create(['facility_id' => $facility->id]);
 
@@ -32,8 +32,8 @@ class ReviewTest extends TestCase
 
     public function test_can_submit_review_for_completed_visit(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = $this->createCompletedVisit();
+        $tech = $this->actingAsTechnicianDoctor();
+        $visit = $this->createCompletedVisit($tech->facility_id);
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
             'rating'            => 5,
@@ -47,8 +47,8 @@ class ReviewTest extends TestCase
 
     public function test_cannot_submit_review_for_non_completed_visit(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
+        $facility = Facility::findOrFail($tech->facility_id);
         $doctor = Doctor::factory()->create(['facility_id' => $facility->id]);
         $patient = Patient::factory()->create(['facility_id' => $facility->id]);
 
@@ -69,8 +69,8 @@ class ReviewTest extends TestCase
 
     public function test_cannot_submit_duplicate_review(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = $this->createCompletedVisit();
+        $tech = $this->actingAsTechnicianDoctor();
+        $visit = $this->createCompletedVisit($tech->facility_id);
 
         $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
             'rating'            => 4,
@@ -88,7 +88,13 @@ class ReviewTest extends TestCase
     public function test_manager_can_publish_review(): void
     {
         $manager = $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'pending']);
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'pending',
+        ]);
 
         $response = $this->postJson("/api/reviews/{$review->id}/publish");
         $response->assertStatus(200)->assertJsonPath('status', 'published');
@@ -96,8 +102,14 @@ class ReviewTest extends TestCase
 
     public function test_manager_can_hide_review(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $response = $this->postJson("/api/reviews/{$review->id}/hide", [
             'reason' => 'This review contains abusive language and violates our policy.',
@@ -108,8 +120,14 @@ class ReviewTest extends TestCase
 
     public function test_manager_can_respond_to_review(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $response = $this->postJson("/api/reviews/{$review->id}/respond", [
             'body' => 'Thank you for your feedback! We strive to provide the best care.',
@@ -120,8 +138,14 @@ class ReviewTest extends TestCase
 
     public function test_can_appeal_review(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $response = $this->postJson("/api/reviews/{$review->id}/appeal", [
             'reason' => 'This review appears to be fraudulent and violates our terms of service.',
@@ -133,8 +157,8 @@ class ReviewTest extends TestCase
 
     public function test_rating_must_be_between_1_and_5(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = $this->createCompletedVisit();
+        $tech = $this->actingAsTechnicianDoctor();
+        $visit = $this->createCompletedVisit($tech->facility_id);
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
             'rating'            => 6,
@@ -146,28 +170,28 @@ class ReviewTest extends TestCase
 
     public function test_dashboard_returns_statistics(): void
     {
-        $this->actingAsManager();
-        $facility = Facility::factory()->create();
-        $doctor = Doctor::factory()->create(['facility_id' => $facility->id]);
-        $patient = Patient::factory()->create(['facility_id' => $facility->id]);
+        $manager = $this->actingAsManager();
+        $facilityId = $manager->facility_id;
+        $doctor = Doctor::factory()->create(['facility_id' => $facilityId]);
+        $patient = Patient::factory()->create(['facility_id' => $facilityId]);
 
         for ($i = 0; $i < 5; $i++) {
             $visit = Visit::factory()->create([
-                'facility_id' => $facility->id,
+                'facility_id' => $facilityId,
                 'doctor_id'   => $doctor->id,
                 'patient_id'  => $patient->id,
                 'status'      => 'completed',
             ]);
             VisitReview::factory()->create([
                 'visit_id'    => $visit->id,
-                'facility_id' => $facility->id,
+                'facility_id' => $facilityId,
                 'doctor_id'   => $doctor->id,
                 'status'      => 'published',
                 'rating'      => rand(1, 5),
             ]);
         }
 
-        $response = $this->getJson("/api/reviews/dashboard?facility_id={$facility->id}");
+        $response = $this->getJson("/api/reviews/dashboard?facility_id={$facilityId}");
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -180,13 +204,14 @@ class ReviewTest extends TestCase
 
     public function test_can_list_reviews_with_filters(): void
     {
-        $this->actingAsManager();
-        $facility1 = Facility::factory()->create();
-        $facility2 = Facility::factory()->create();
-        VisitReview::factory()->count(2)->create(['facility_id' => $facility1->id]);
-        VisitReview::factory()->count(1)->create(['facility_id' => $facility2->id]);
+        $manager = $this->actingAsManager();
+        $facilityId = $manager->facility_id;
 
-        $response = $this->getJson("/api/reviews?facility_id={$facility1->id}");
+        // Create two reviews in the manager's facility; one review in an unrelated facility.
+        VisitReview::factory()->count(2)->create(['facility_id' => $facilityId]);
+        VisitReview::factory()->count(1)->create(); // different facility — not visible to manager
+
+        $response = $this->getJson('/api/reviews');
 
         $response->assertStatus(200)
             ->assertJsonPath('total', 2);
@@ -194,9 +219,11 @@ class ReviewTest extends TestCase
 
     public function test_can_filter_reviews_by_rating(): void
     {
-        $this->actingAsManager();
-        VisitReview::factory()->count(2)->create(['rating' => 5]);
-        VisitReview::factory()->count(1)->create(['rating' => 2]);
+        $manager = $this->actingAsManager();
+        $facilityId = $manager->facility_id;
+
+        VisitReview::factory()->count(2)->create(['facility_id' => $facilityId, 'rating' => 5]);
+        VisitReview::factory()->count(1)->create(['facility_id' => $facilityId, 'rating' => 2]);
 
         $response = $this->getJson('/api/reviews?rating=2');
 
@@ -206,8 +233,14 @@ class ReviewTest extends TestCase
 
     public function test_can_show_review_with_relationships(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $response = $this->getJson("/api/reviews/{$review->id}");
 
@@ -252,8 +285,14 @@ class ReviewTest extends TestCase
 
     public function test_hide_requires_reason_minimum_length(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $response = $this->postJson("/api/reviews/{$review->id}/hide", [
             'reason' => 'short',
@@ -264,8 +303,14 @@ class ReviewTest extends TestCase
 
     public function test_manager_can_resolve_appeal(): void
     {
-        $this->actingAsManager();
-        $review = VisitReview::factory()->create(['status' => 'published']);
+        $manager = $this->actingAsManager();
+        $visit = $this->createCompletedVisit($manager->facility_id);
+        $review = VisitReview::factory()->create([
+            'visit_id'    => $visit->id,
+            'facility_id' => $manager->facility_id,
+            'doctor_id'   => $visit->doctor_id,
+            'status'      => 'published',
+        ]);
 
         $appealResp = $this->postJson("/api/reviews/{$review->id}/appeal", [
             'reason' => 'Customer claims review contains fabricated details.',
@@ -282,7 +327,7 @@ class ReviewTest extends TestCase
 
     public function test_dashboard_requires_facility_id(): void
     {
-        $this->actingAsManager();
+        $this->actingAsAdmin();
 
         $response = $this->getJson('/api/reviews/dashboard');
 
@@ -291,8 +336,8 @@ class ReviewTest extends TestCase
 
     public function test_review_body_character_limit_enforced(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $visit = $this->createCompletedVisit();
+        $tech = $this->actingAsTechnicianDoctor();
+        $visit = $this->createCompletedVisit($tech->facility_id);
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
             'rating'            => 5,

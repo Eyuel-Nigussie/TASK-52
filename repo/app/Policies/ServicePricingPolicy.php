@@ -40,8 +40,14 @@ class ServicePricingPolicy
 
     private function sharesFacility(User $user, ?int $facilityId): bool
     {
-        if ($user->isAdmin() || $user->facility_id === null || $facilityId === null) {
+        if ($user->isAdmin()) {
             return true;
+        }
+        if ($user->facility_id === null) {
+            return false;
+        }
+        if ($facilityId === null) {
+            return false;
         }
         return $user->facility_id === $facilityId;
     }

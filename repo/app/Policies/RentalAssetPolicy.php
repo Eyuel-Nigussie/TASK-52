@@ -45,9 +45,9 @@ class RentalAssetPolicy
         if ($user->isAdmin()) {
             return true;
         }
-        if ($user->facility_id !== null) {
-            return $user->facility_id === $facilityId;
+        if ($user->facility_id === null) {
+            return false;
         }
-        return true;
+        return $user->facility_id === $facilityId;
     }
 }

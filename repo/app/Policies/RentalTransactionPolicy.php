@@ -43,6 +43,6 @@ class RentalTransactionPolicy
         if ($user->facility_id !== null) {
             return $user->facility_id === $facilityId;
         }
-        return true;
+        return false;
     }
 }

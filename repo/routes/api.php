@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Route;
 // Auth routes (public)
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])
-        ->middleware('throttle:10,10');
+        ->middleware('throttle:login');
     Route::post('/refresh', [AuthController::class, 'refresh'])
         ->middleware('throttle:30,1'); // silent restore — modest rate-limit
     Route::get('/captcha-status', [AuthController::class, 'captchaStatus']);

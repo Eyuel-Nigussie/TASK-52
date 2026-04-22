@@ -39,9 +39,8 @@ class SecurityTest extends TestCase
     public function test_phone_masked_for_non_admin(): void
     {
         $tech = $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
         $patient = Patient::factory()->create([
-            'facility_id'           => $facility->id,
+            'facility_id'           => $tech->facility_id,
             'owner_phone_encrypted' => encrypt('(555) 123-4567'),
         ]);
 
@@ -151,9 +150,8 @@ class SecurityTest extends TestCase
         $user = User::factory()->create(['active' => false]);
         $token = $user->createToken('test')->plainTextToken;
 
-        $response = $this->withToken($token)->getJson('/api/facilities');
-        // Token exists but user is inactive (depends on implementation)
-        // At minimum, the user shouldn't get data they shouldn't see
-        $this->assertContains($response->status(), [200, 401, 403]);
+        $this->withToken($token)->getJson('/api/facilities')
+            ->assertStatus(403)
+            ->assertJson(['message' => 'Account is disabled.']);
     }
 }

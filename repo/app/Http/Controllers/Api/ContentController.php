@@ -39,14 +39,15 @@ class ContentController extends Controller
         $authoringRoles = ['system_admin', 'content_editor', 'content_approver'];
         if (!in_array($user->role, $authoringRoles, true)) {
             $query->published()->forUser($user);
-        } elseif (!$user->isAdmin() && $user->facility_id !== null) {
-            // Facility-scoped authoring staff: only their own facility plus
-            // global (no facility_ids) content. Editors without a facility
-            // assignment (legacy accounts) fall through and see everything.
-            $query->where(function ($q) use ($user) {
-                $q->whereJsonContains('facility_ids', $user->facility_id)
-                  ->orWhereNull('facility_ids');
-            });
+        } elseif (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($q) use ($user) {
+                    $q->whereJsonContains('facility_ids', $user->facility_id)
+                      ->orWhereNull('facility_ids');
+                });
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 20)));

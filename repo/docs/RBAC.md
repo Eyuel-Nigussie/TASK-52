@@ -123,6 +123,26 @@ authorization check returns only facility-scoped rows. Example:
 `ContentItem::scopeForUser($user)` filters by `facility_ids` and
 `role_targets`. This prevents IDOR via enumeration.
 
+Two scoping patterns are used, and both apply deny-all for non-admin users
+with `facility_id = null`:
+
+- **`ScopesByFacility::applyFacilityScope()`** — used by controllers that
+  inherit the trait; automatically returns `whereRaw('1 = 0')` for
+  null-facility non-admins.
+- **Inline guard block** — used by controllers that scope via a sub-query
+  (e.g., storeroom → facility join) or that need to abort early with a 403
+  (analytics/create endpoints). The pattern is:
+  ```php
+  if (!$user->isAdmin()) {
+      if ($user->facility_id === null) { /* whereRaw('1=0') or abort(403) */ }
+      else { /* apply facility filter */ }
+  }
+  ```
+
+All list, analytics, export, and create endpoints follow one of these two
+patterns. There are no endpoints where a null-facility non-admin falls
+through to an unfiltered result.
+
 ---
 
 ## 4. Permission Matrix
@@ -175,7 +195,27 @@ above.
 
 ---
 
-## 6. Notable Exceptions
+## 6. Null-Facility Non-Admin Invariant
+
+Every non-admin user without a `facility_id` assignment is treated as
+having **no access** to facility-scoped objects and list endpoints.
+Specifically:
+
+- All policy `sharesFacility()` / `view()` helpers return `false` when
+  `$user->facility_id === null` and `$user->isAdmin()` is false.
+- All controller query scopes apply `whereRaw('1 = 0')` for null-facility
+  non-admins (rather than omitting the filter), ensuring the list
+  returns an empty set rather than leaking all rows.
+- `DedupController` aborts with 403 rather than treating a null-facility
+  non-admin as an admin.
+
+This closes the legacy "unassigned superuser" shortcut that predated the
+`system_admin` role. `UserController` blocks creation of new non-admin
+users without a facility assignment.
+
+---
+
+## 7. Notable Exceptions
 
 - **Review submission** (`POST /api/reviews/visits/{visit}/submit`) is
   intentionally unauthenticated: a pet owner uses a shared tablet, not a
@@ -188,7 +228,7 @@ above.
 
 ---
 
-## 7. Change Management
+## 8. Change Management
 
 Any change to the matrix above requires:
 

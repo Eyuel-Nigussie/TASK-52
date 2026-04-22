@@ -15,17 +15,19 @@ class InventoryTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function createItemAndStoreroom(): array
+    private function createItemAndStoreroom(?int $facilityId = null): array
     {
         $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $storeroom = $facilityId !== null
+            ? Storeroom::factory()->create(['facility_id' => $facilityId])
+            : Storeroom::factory()->create();
         return [$item, $storeroom];
     }
 
     public function test_can_receive_stock(): void
     {
-        $this->actingAsInventoryClerk();
-        [$item, $storeroom] = $this->createItemAndStoreroom();
+        $clerk = $this->actingAsInventoryClerk();
+        [$item, $storeroom] = $this->createItemAndStoreroom($clerk->facility_id);
 
         $response = $this->postJson('/api/inventory/receive', [
             'item_id'      => $item->id,
@@ -44,8 +46,8 @@ class InventoryTest extends TestCase
 
     public function test_can_issue_stock(): void
     {
-        $this->actingAsInventoryClerk();
-        [$item, $storeroom] = $this->createItemAndStoreroom();
+        $clerk = $this->actingAsInventoryClerk();
+        [$item, $storeroom] = $this->createItemAndStoreroom($clerk->facility_id);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -69,8 +71,8 @@ class InventoryTest extends TestCase
 
     public function test_cannot_issue_more_than_available(): void
     {
-        $this->actingAsInventoryClerk();
-        [$item, $storeroom] = $this->createItemAndStoreroom();
+        $clerk = $this->actingAsInventoryClerk();
+        [$item, $storeroom] = $this->createItemAndStoreroom($clerk->facility_id);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -92,10 +94,10 @@ class InventoryTest extends TestCase
 
     public function test_can_transfer_between_storerooms(): void
     {
-        $this->actingAsInventoryClerk();
+        $clerk = $this->actingAsInventoryClerk();
         $item = InventoryItem::factory()->create();
-        $from = Storeroom::factory()->create();
-        $to = Storeroom::factory()->create();
+        $from = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
+        $to   = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -116,7 +118,7 @@ class InventoryTest extends TestCase
         $response->assertStatus(201);
 
         $fromLevel = StockLevel::where(['item_id' => $item->id, 'storeroom_id' => $from->id])->first();
-        $toLevel = StockLevel::where(['item_id' => $item->id, 'storeroom_id' => $to->id])->first();
+        $toLevel   = StockLevel::where(['item_id' => $item->id, 'storeroom_id' => $to->id])->first();
 
         $this->assertEquals(70.0, (float) $fromLevel->on_hand);
         $this->assertEquals(30.0, (float) $toLevel->on_hand);
@@ -125,7 +127,7 @@ class InventoryTest extends TestCase
     public function test_low_stock_alert_triggered_below_safety_stock(): void
     {
         $this->actingAsAdmin();
-        $item = InventoryItem::factory()->create(['safety_stock_days' => 14]);
+        $item     = InventoryItem::factory()->create(['safety_stock_days' => 14]);
         $storeroom = Storeroom::factory()->create();
 
         StockLevel::create([
@@ -153,7 +155,7 @@ class InventoryTest extends TestCase
             'quantity'     => 10,
         ]);
 
-        $ledger = \App\Models\StockLedger::first();
+        $ledger           = \App\Models\StockLedger::first();
         $originalQuantity = $ledger->quantity;
 
         $ledger->quantity = 999;
@@ -164,7 +166,7 @@ class InventoryTest extends TestCase
 
     public function test_atp_calculated_correctly(): void
     {
-        $item = InventoryItem::factory()->create();
+        $item      = InventoryItem::factory()->create();
         $storeroom = Storeroom::factory()->create();
 
         $level = StockLevel::create([

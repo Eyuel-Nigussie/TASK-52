@@ -157,7 +157,7 @@ All endpoints are prefixed with `/api`. Authenticated routes require an `Authori
 | Safety-stock baseline | 14 days of average consumption |
 | Stocktake variance requiring approval | > 5% discrepancy |
 | Minimum password length | 12 characters |
-| Login rate limit | 10 attempts per 10-minute window |
+| Login rate limit | 10 attempts per 10-minute window, keyed by workstation ID (falls back to IP) |
 | Session inactivity timeout | 15 minutes |
 | Audit log retention | 7 years (records are immutable) |
 | Inventory ledger entries | Immutable — adjustments create corrective entries, not overwrites |
@@ -223,6 +223,41 @@ Use the token in all subsequent requests:
 ```bash
 curl -s http://localhost:8000/api/auth/me \
   -H "Authorization: Bearer 1|abc123..."
+```
+
+### Workstation Identification and Login Rate Limiting
+
+Login attempts are throttled at **10 per 10-minute window**, keyed by a stable workstation identifier rather than IP address. This prevents a shared clinic LAN (many terminals behind one NAT IP) from having all terminals locked out because one terminal hit the limit.
+
+**`X-Device-ID` header** — send a stable UUID with every login and captcha-status request:
+
+```
+POST /api/auth/login
+X-Device-ID: 550e8400-e29b-41d4-a716-446655440000
+Content-Type: application/json
+```
+
+```
+GET /api/auth/captcha-status
+X-Device-ID: 550e8400-e29b-41d4-a716-446655440000
+```
+
+| Behavior | Detail |
+|---|---|
+| Header present | Rate limit and CAPTCHA counter are keyed by the device ID value |
+| Header absent | Falls back to IP address (same behavior as before this feature was added) |
+| Key scope | Per-workstation — a second terminal with a different device ID is not affected by the first terminal's failures |
+| Browser client | The SPA auto-generates a UUID v4 via `crypto.randomUUID()` and persists it in `localStorage` under `vetops.device_id` |
+| Non-browser clients | Generate a random UUID v4 at first use, persist it in stable storage (e.g. a config file or OS keychain), and send it on every request to `/api/auth/login` and `/api/auth/captcha-status` |
+
+**Example (curl with device ID):**
+
+```bash
+curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -H "X-Device-ID: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"username":"admin","password":"supersecretpassword"}' \
+  | jq .
 ```
 
 ### Logout

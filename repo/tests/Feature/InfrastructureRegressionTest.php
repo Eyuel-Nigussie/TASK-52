@@ -37,7 +37,7 @@ use Tests\TestCase;
  *  - Medium 2: Checksum verification covers media assets
  *  - Medium 3: Rental UI exposes photo + specs (covered by Vitest)
  */
-class AuditFixesRegressionTest2 extends TestCase
+class InfrastructureRegressionTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -243,7 +243,7 @@ class AuditFixesRegressionTest2 extends TestCase
 
     public function test_storeroom_create_update_delete_write_audit(): void
     {
-        $admin = $this->actingAsAdmin();
+        $this->actingAsAdmin();
         $facility = Facility::factory()->create();
 
         $this->postJson('/api/storerooms', [
@@ -285,11 +285,10 @@ class AuditFixesRegressionTest2 extends TestCase
 
     public function test_service_order_create_close_reserve_write_audit(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
 
         $this->postJson('/api/service-orders', [
-            'facility_id'          => $facility->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'deduct_at_close',
         ])->assertStatus(201);
         $this->assertDatabaseHas('audit_logs', ['action' => 'service_order.create']);
@@ -316,9 +315,6 @@ class AuditFixesRegressionTest2 extends TestCase
 
     public function test_app_service_provider_binds_custom_encrypter_when_key_set(): void
     {
-        // When VETOPS_ENCRYPTION_KEY is unset the default encrypter is used
-        // (this is the behavior under test). Confirm that encrypt/decrypt
-        // still round-trips — the provider must not crash in the unset case.
         $roundTrip = decrypt(encrypt('plaintext-payload'));
         $this->assertSame('plaintext-payload', $roundTrip);
     }
@@ -329,9 +325,6 @@ class AuditFixesRegressionTest2 extends TestCase
     {
         Storage::fake('local');
 
-        // Seed a ContentMedia row whose stored file intentionally mismatches
-        // the recorded checksum → command should report mismatched and exit
-        // with FAILURE.
         Storage::put('media/good.bin', 'original-content');
         ContentMedia::create([
             'content_item_id' => \App\Models\ContentItem::factory()->create()->id,

@@ -24,11 +24,14 @@ class AuthController extends Controller
             'captcha_token' => 'nullable|string',
         ]);
 
+        $deviceId = $request->header('X-Device-ID') ?: null;
+
         $result = $this->authService->attempt(
             $data['username'],
             $data['password'],
             $request->ip(),
             $data['captcha_token'] ?? null,
+            $deviceId,
         );
 
         return response()->json([
@@ -48,12 +51,21 @@ class AuthController extends Controller
 
     public function refresh(Request $request): JsonResponse
     {
-        $cookieToken = $request->cookie('vetops_session');
-        // Accept token from cookie or bearer header for flexibility in tests.
-        $cookieToken = $cookieToken ?? $request->bearerToken();
+        $rawCookie = $request->cookie('vetops_session');
 
-        if (!$cookieToken) {
+        if (!$rawCookie && !$request->bearerToken()) {
             return response()->json(['message' => 'No active session.'], 401);
+        }
+
+        // Decrypt the cookie value; fall back to bearer token (test/dev helper).
+        if ($rawCookie) {
+            try {
+                $cookieToken = decrypt($rawCookie);
+            } catch (\Exception $e) {
+                return response()->json(['message' => 'Session is invalid or has expired.'], 422);
+            }
+        } else {
+            $cookieToken = $request->bearerToken();
         }
 
         try {
@@ -95,14 +107,16 @@ class AuthController extends Controller
 
     public function captchaStatus(Request $request): JsonResponse
     {
-        return response()->json($this->authService->getCaptchaChallenge($request->ip()));
+        $deviceId = $request->header('X-Device-ID') ?: null;
+        $throttleKey = $deviceId ?? $request->ip();
+        return response()->json($this->authService->getCaptchaChallenge($throttleKey));
     }
 
     private function sessionCookie(string $token, bool $secure): Cookie
     {
         return cookie(
             'vetops_session',
-            $token,
+            encrypt($token),
             8 * 60,  // 8 hours — covers a typical work shift
             '/',
             null,

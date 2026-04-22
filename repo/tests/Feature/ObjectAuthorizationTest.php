@@ -26,7 +26,7 @@ class ObjectAuthorizationTest extends TestCase
     {
         $manager = $this->actingAsManager();
         $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $manager->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,

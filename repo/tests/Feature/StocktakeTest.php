@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\Facility;
 use App\Models\InventoryItem;
 use App\Models\StockLevel;
 use App\Models\StocktakeSession;
 use App\Models\Storeroom;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,8 +19,8 @@ class StocktakeTest extends TestCase
 
     public function test_can_start_stocktake_session(): void
     {
-        $this->actingAsInventoryClerk();
-        $storeroom = Storeroom::factory()->create();
+        $clerk     = $this->actingAsInventoryClerk();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         $response = $this->postJson('/api/stocktake/start', [
             'storeroom_id' => $storeroom->id,
@@ -29,13 +31,13 @@ class StocktakeTest extends TestCase
 
     public function test_cannot_start_duplicate_stocktake(): void
     {
-        $this->actingAsInventoryClerk();
-        $storeroom = Storeroom::factory()->create();
+        $clerk     = $this->actingAsInventoryClerk();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         StocktakeSession::create([
             'storeroom_id' => $storeroom->id,
             'status'       => 'open',
-            'started_by'   => 1,
+            'started_by'   => $clerk->id,
             'started_at'   => now(),
         ]);
 
@@ -48,9 +50,9 @@ class StocktakeTest extends TestCase
 
     public function test_can_record_stocktake_entry(): void
     {
-        $this->actingAsInventoryClerk();
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $clerk     = $this->actingAsInventoryClerk();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -64,7 +66,7 @@ class StocktakeTest extends TestCase
         $session = StocktakeSession::create([
             'storeroom_id' => $storeroom->id,
             'status'       => 'open',
-            'started_by'   => 1,
+            'started_by'   => $clerk->id,
             'started_at'   => now(),
         ]);
 
@@ -83,8 +85,9 @@ class StocktakeTest extends TestCase
 
     public function test_variance_above_threshold_requires_approval(): void
     {
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $facility  = Facility::factory()->create();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $facility->id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -102,7 +105,8 @@ class StocktakeTest extends TestCase
             'started_at'   => now(),
         ]);
 
-        $this->actingAsInventoryClerk();
+        $clerk = User::factory()->inventoryClerk()->create(['facility_id' => $facility->id]);
+        $this->actingAs($clerk, 'sanctum');
 
         // 6% variance (above 5% threshold)
         $response = $this->postJson("/api/stocktake/{$session->id}/entries", [
@@ -112,15 +116,16 @@ class StocktakeTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertDatabaseHas('stocktake_entries', [
-            'session_id'       => $session->id,
+            'session_id'        => $session->id,
             'requires_approval' => true,
         ]);
     }
 
     public function test_variance_below_threshold_does_not_require_approval(): void
     {
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $facility  = Facility::factory()->create();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $facility->id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -138,7 +143,8 @@ class StocktakeTest extends TestCase
             'started_at'   => now(),
         ]);
 
-        $this->actingAsInventoryClerk();
+        $clerk = User::factory()->inventoryClerk()->create(['facility_id' => $facility->id]);
+        $this->actingAs($clerk, 'sanctum');
 
         // 3% variance (below 5% threshold)
         $response = $this->postJson("/api/stocktake/{$session->id}/entries", [
@@ -155,9 +161,9 @@ class StocktakeTest extends TestCase
 
     public function test_manager_can_approve_individual_entry(): void
     {
-        $manager = $this->actingAsManager();
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $manager   = $this->actingAsManager();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $manager->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -192,9 +198,9 @@ class StocktakeTest extends TestCase
 
     public function test_non_manager_cannot_approve_entry(): void
     {
-        $clerk = $this->actingAsInventoryClerk();
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $clerk     = $this->actingAsInventoryClerk();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -227,9 +233,9 @@ class StocktakeTest extends TestCase
 
     public function test_manager_can_approve_session_after_all_entries_approved(): void
     {
-        $manager = $this->actingAsManager();
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $manager   = $this->actingAsManager();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $manager->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -267,9 +273,9 @@ class StocktakeTest extends TestCase
 
     public function test_session_goes_to_pending_approval_when_variance_entries_exist(): void
     {
-        $this->actingAsInventoryClerk();
-        $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $clerk     = $this->actingAsInventoryClerk();
+        $item      = InventoryItem::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         StockLevel::create([
             'item_id'              => $item->id,
@@ -283,7 +289,7 @@ class StocktakeTest extends TestCase
         $session = StocktakeSession::create([
             'storeroom_id' => $storeroom->id,
             'status'       => 'open',
-            'started_by'   => 1,
+            'started_by'   => $clerk->id,
             'started_at'   => now(),
         ]);
 

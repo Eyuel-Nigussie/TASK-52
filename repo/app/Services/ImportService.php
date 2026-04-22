@@ -411,7 +411,7 @@ class ImportService
         [$headers, $rows] = match ($entityType) {
             'facility' => [
                 ['external_key', 'name', 'address', 'city', 'state', 'zip', 'email', 'active'],
-                Facility::all()->map(fn($f) => [$f->external_key, $f->name, $f->address, $f->city, $f->state, $f->zip, $f->email, $f->active ? '1' : '0'])->toArray(),
+                Facility::when(isset($filters['facility_id']), fn($q) => $q->where('id', $filters['facility_id']))->get()->map(fn($f) => [$f->external_key, $f->name, $f->address, $f->city, $f->state, $f->zip, $f->email, $f->active ? '1' : '0'])->toArray(),
             ],
             'inventory_item' => [
                 ['external_key', 'name', 'sku', 'category', 'unit_of_measure', 'safety_stock_days', 'active'],

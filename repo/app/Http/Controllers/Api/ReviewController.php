@@ -113,8 +113,10 @@ class ReviewController extends Controller
         $user = $request->user();
         $requestedFacilityId = $request->integer('facility_id') ?: null;
 
-        // Non-admin users are locked to their own facility.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
             $facilityId = $user->facility_id;
         } else {
             $request->validate(['facility_id' => 'required|exists:facilities,id']);

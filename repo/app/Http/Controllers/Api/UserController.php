@@ -40,10 +40,10 @@ class UserController extends Controller
             'department_id' => 'nullable|exists:departments,id',
         ]);
 
-        // Only system_admin may be unassigned from a facility when the
-        // requester is not a system admin. System admins may create users
-        // without assigning a facility (useful for administrative workflows).
-        if (! $request->user()->isAdmin() && $data['role'] !== 'system_admin' && empty($data['facility_id'])) {
+        // system_admin is the only role that may have no facility. All other
+        // roles must always be assigned to a facility, regardless of who is
+        // making the request.
+        if ($data['role'] !== 'system_admin' && empty($data['facility_id'])) {
             return response()->json([
                 'message' => 'facility_id is required for non-admin roles.',
                 'errors'  => ['facility_id' => ['Non-admin roles must be assigned to a facility.']],
@@ -81,12 +81,16 @@ class UserController extends Controller
             'active'        => 'sometimes|boolean',
         ]);
 
-        // Enforce facility assignment for non-admin roles when the requester
-        // is not a system admin. System admins are permitted to move users
-        // between facilities or clear facility_id as part of admin flows.
+        // Only enforce the facility requirement when role or facility_id is
+        // actually being changed. Legacy rows with null facility may have
+        // other fields (active, name, email) updated without touching the
+        // assignment. Explicitly clearing facility_id or changing a role to a
+        // non-admin one without providing a facility must always be rejected.
         $nextRole = $data['role'] ?? $user->role;
         $nextFacilityId = array_key_exists('facility_id', $data) ? $data['facility_id'] : $user->facility_id;
-        if (! $request->user()->isAdmin() && $nextRole !== 'system_admin' && $nextFacilityId === null) {
+        $roleChanging = isset($data['role']);
+        $facilityChanging = array_key_exists('facility_id', $data);
+        if (($roleChanging || $facilityChanging) && $nextRole !== 'system_admin' && $nextFacilityId === null) {
             return response()->json([
                 'message' => 'facility_id is required for non-admin roles.',
                 'errors'  => ['facility_id' => ['Non-admin roles must be assigned to a facility.']],

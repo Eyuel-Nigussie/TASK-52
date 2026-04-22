@@ -25,8 +25,8 @@ class MergeRequestTest extends TestCase
 
     public function test_manager_can_list_merge_requests(): void
     {
-        $this->actingAsManager();
-        MergeRequest::factory()->count(2)->create();
+        $manager = $this->actingAsManager();
+        MergeRequest::factory()->count(2)->create(['facility_id' => $manager->facility_id]);
 
         $response = $this->getJson('/api/merge-requests');
 

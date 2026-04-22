@@ -82,7 +82,7 @@ class AuditFixesRegressionTest extends TestCase
             now()->addMinutes(120),
         );
 
-        $this->withCookie('vetops_session', $plain)
+        $this->withRefreshCookie($plain)
             ->postJson('/api/auth/refresh')
             ->assertStatus(422);
     }
@@ -99,7 +99,7 @@ class AuditFixesRegressionTest extends TestCase
             now()->addMinutes(120),
         );
 
-        $this->withCookie('vetops_session', $plain)
+        $this->withRefreshCookie($plain)
             ->postJson('/api/auth/refresh')
             ->assertStatus(200)
             ->assertJsonPath('user.id', $user->id);

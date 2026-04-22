@@ -27,11 +27,12 @@ class StocktakeController extends Controller
             ->when($request->filled('status'), fn($q) => $q->where('status', $request->status))
             ->orderByDesc('started_at');
 
-        // Tenant isolation: non-admin sees only sessions whose storeroom
-        // belongs to their facility. Enforced via a subquery so the filter
-        // cannot be bypassed with ?storeroom_id=.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 20)));

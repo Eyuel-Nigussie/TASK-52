@@ -45,13 +45,6 @@ class MergeRequestPolicy
             return true;
         }
 
-        // If both sides are unassigned, allow manager for legacy/test rows.
-        if ($user->facility_id === null && $request->facility_id === null) {
-            return true;
-        }
-
-        // Non-admin managers must be bound to a facility AND the merge row
-        // must be tagged with the same facility.
         return $user->facility_id !== null
             && $request->facility_id !== null
             && $user->facility_id === $request->facility_id;

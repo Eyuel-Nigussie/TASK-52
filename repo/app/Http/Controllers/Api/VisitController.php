@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ScopesByFacility;
 use App\Http\Controllers\Controller;
 use App\Models\Doctor;
 use App\Models\Patient;
+use App\Models\ServiceOrder;
 use App\Models\Visit;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
@@ -51,8 +52,13 @@ class VisitController extends Controller
         ]);
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null && (int) $data['facility_id'] !== $user->facility_id) {
-            abort(403, 'Cannot create visits for another facility.');
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
+            if ((int) $data['facility_id'] !== $user->facility_id) {
+                abort(403, 'Cannot create visits for another facility.');
+            }
         }
 
         // Cross-entity consistency — patient, doctor, and (when provided)
@@ -69,6 +75,14 @@ class VisitController extends Controller
             throw ValidationException::withMessages([
                 'doctor_id' => ['Doctor belongs to a different facility than this visit.'],
             ]);
+        }
+        if (!empty($data['service_order_id'])) {
+            $serviceOrder = ServiceOrder::findOrFail($data['service_order_id']);
+            if ((int) $serviceOrder->facility_id !== $facilityId) {
+                throw ValidationException::withMessages([
+                    'service_order_id' => ['Service order belongs to a different facility than this visit.'],
+                ]);
+            }
         }
 
         $visit = Visit::create($data);

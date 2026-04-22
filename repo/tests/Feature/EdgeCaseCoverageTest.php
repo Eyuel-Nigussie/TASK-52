@@ -188,7 +188,7 @@ class EdgeCaseCoverageTest extends TestCase
 
         $response = $this->getJson('/api/storerooms');
         $response->assertStatus(200);
-        foreach ($response->json('data') as $row) {
+        foreach ($response->json() as $row) {
             $this->assertEquals($a->id, $row['facility_id']);
         }
     }

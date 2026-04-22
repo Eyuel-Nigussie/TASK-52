@@ -22,7 +22,7 @@ class StoreroomPolicy
         if ($user->facility_id !== null) {
             return $user->facility_id === $storeroom->facility_id;
         }
-        return true;
+        return false;
     }
 
     public function create(User $user): bool

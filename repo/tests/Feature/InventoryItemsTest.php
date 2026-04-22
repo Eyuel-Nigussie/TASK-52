@@ -139,9 +139,9 @@ class InventoryItemsTest extends TestCase
 
     public function test_can_list_stock_levels(): void
     {
-        $this->actingAsInventoryClerk();
+        $clerk = $this->actingAsInventoryClerk();
         $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
         StockLevel::create([
             'item_id'              => $item->id,
             'storeroom_id'         => $storeroom->id,
@@ -159,10 +159,10 @@ class InventoryItemsTest extends TestCase
 
     public function test_can_filter_stock_levels_by_storeroom(): void
     {
-        $this->actingAsInventoryClerk();
+        $clerk = $this->actingAsInventoryClerk();
         $item = InventoryItem::factory()->create();
-        $s1 = Storeroom::factory()->create();
-        $s2 = Storeroom::factory()->create();
+        $s1 = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
+        $s2 = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         foreach ([$s1, $s2] as $sr) {
             StockLevel::create([
@@ -183,9 +183,9 @@ class InventoryItemsTest extends TestCase
 
     public function test_ledger_filters_by_transaction_type(): void
     {
-        $this->actingAsInventoryClerk();
+        $clerk = $this->actingAsInventoryClerk();
         $item = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         // Receive creates an 'inbound' ledger entry
         $this->postJson('/api/inventory/receive', [
@@ -219,7 +219,8 @@ class InventoryItemsTest extends TestCase
 
     public function test_low_stock_requires_facility_id(): void
     {
-        $this->actingAsInventoryClerk();
+        // Admin must always supply facility_id; non-admin uses their own facility.
+        $this->actingAsAdmin();
 
         $response = $this->getJson('/api/inventory/low-stock-alerts');
 

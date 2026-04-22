@@ -117,7 +117,7 @@ class CsvImportTest extends TestCase
         $this->assertStringContainsString('external_key', $body);
         $this->assertStringContainsString('ITEM-EXP-1', $body);
         $this->assertStringContainsString('Syringe 5ml', $body);
-        $this->assertEquals('text/csv', $response->headers->get('Content-Type'));
+        $this->assertStringStartsWith('text/csv', $response->headers->get('Content-Type'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'export', 'entity_type' => 'inventory_item']);
     }
 

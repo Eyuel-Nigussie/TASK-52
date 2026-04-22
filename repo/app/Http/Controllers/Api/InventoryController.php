@@ -177,8 +177,12 @@ class InventoryController extends Controller
             ->when($request->filled('storeroom_id'), fn($q) => $q->where('storeroom_id', $request->storeroom_id))
             ->when($request->filled('item_id'), fn($q) => $q->where('item_id', $request->item_id));
 
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 50)));
@@ -190,8 +194,10 @@ class InventoryController extends Controller
 
         $user = $request->user();
 
-        // Non-admin users are locked to their own facility regardless of the param.
-        if (!$user->isAdmin() && $user->facility_id !== null) {
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
             $facilityId = $user->facility_id;
         } else {
             $request->validate(['facility_id' => 'required|exists:facilities,id']);
@@ -214,8 +220,12 @@ class InventoryController extends Controller
             ->when($request->filled('transaction_type'), fn($q) => $q->where('transaction_type', $request->transaction_type))
             ->orderByDesc('created_at');
 
-        if (!$user->isAdmin() && $user->facility_id !== null) {
-            $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('storeroom_id', Storeroom::where('facility_id', $user->facility_id)->pluck('id'));
+            }
         }
 
         return response()->json($query->paginate($request->integer('per_page', 50)));
@@ -249,10 +259,10 @@ class InventoryController extends Controller
     private function assertStoreroomAccessible(Request $request, Storeroom $storeroom): void
     {
         $user = $request->user();
-        if ($user->isAdmin() || $user->facility_id === null) {
+        if ($user->isAdmin()) {
             return;
         }
-        if ($storeroom->facility_id !== $user->facility_id) {
+        if ($user->facility_id === null || $storeroom->facility_id !== $user->facility_id) {
             abort(403, 'Storeroom belongs to another facility.');
         }
     }

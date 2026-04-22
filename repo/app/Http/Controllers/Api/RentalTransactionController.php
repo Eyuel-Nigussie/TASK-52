@@ -56,14 +56,19 @@ class RentalTransactionController extends Controller
         ]);
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null && (int) $data['facility_id'] !== $user->facility_id) {
-            abort(403, 'Cannot check out rentals for another facility.');
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                abort(403, 'Account has no facility assignment.');
+            }
+            if ((int) $data['facility_id'] !== $user->facility_id) {
+                abort(403, 'Cannot check out rentals for another facility.');
+            }
         }
 
         $asset = RentalAsset::findOrFail($data['asset_id']);
 
         // Same-facility enforcement at the object level.
-        if (!$user->isAdmin() && $user->facility_id !== null && $asset->facility_id !== $user->facility_id) {
+        if (!$user->isAdmin() && $asset->facility_id !== $user->facility_id) {
             abort(403, 'Asset belongs to another facility.');
         }
 
@@ -125,7 +130,10 @@ class RentalTransactionController extends Controller
         $overdue = $this->rentalService->getOverdueTransactions();
 
         $user = $request->user();
-        if (!$user->isAdmin() && $user->facility_id !== null) {
+        if (!$user->isAdmin()) {
+            if ($user->facility_id === null) {
+                return response()->json([]);
+            }
             $overdue = $overdue->where('facility_id', $user->facility_id)->values();
         }
 

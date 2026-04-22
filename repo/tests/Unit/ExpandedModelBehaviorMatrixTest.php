@@ -108,7 +108,7 @@ class ExpandedModelBehaviorMatrixTest extends TestCase
         yield 'inactive_status_never_overdue' => ['returned', '2026-04-20 08:00:00', 2, false, 0];
         yield 'active_not_past_threshold' => ['active', '2026-04-20 11:00:00', 2, false, 0];
         yield 'active_exact_threshold' => ['active', '2026-04-20 10:00:00', 2, false, 0];
-        yield 'active_past_threshold' => ['active', '2026-04-20 09:30:00', 2, true, 90];
+        yield 'active_past_threshold' => ['active', '2026-04-20 09:30:00', 2, true, 30];
         yield 'already_overdue_status' => ['overdue', '2026-04-20 09:00:00', 2, true, 60];
 
         $thresholds = [1, 2, 3, 4, 6];
@@ -120,7 +120,7 @@ class ExpandedModelBehaviorMatrixTest extends TestCase
                 $cutoff = $now->copy()->subHours($threshold);
                 $isOverdue = $expected->lt($cutoff);
                 $minutes = $isOverdue
-                    ? (int) $now->diffInMinutes($expected->copy()->addHours($threshold * 2))
+                    ? (int) $expected->copy()->addHours($threshold)->diffInMinutes($now)
                     : 0;
                 yield "thr{$threshold}_off{$offset}" => [
                     'active',

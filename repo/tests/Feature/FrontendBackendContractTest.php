@@ -226,9 +226,9 @@ class FrontendBackendContractTest extends TestCase
 
     public function test_inventory_receive_payload_from_inventory_view_tx_is_accepted(): void
     {
-        $this->actingAsInventoryClerk();
+        $clerk     = $this->actingAsInventoryClerk();
         $item      = InventoryItem::factory()->create();
-        $storeroom = Storeroom::factory()->create();
+        $storeroom = Storeroom::factory()->create(['facility_id' => $clerk->facility_id]);
 
         // Exact shape produced by InventoryView.vue openTx('receive')
         $payload = [
@@ -245,12 +245,11 @@ class FrontendBackendContractTest extends TestCase
 
     public function test_service_order_create_payload_from_orders_view_is_accepted(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
+        $tech = $this->actingAsTechnicianDoctor();
 
         // Minimal shape produced by the service-orders UI flow.
         $payload = [
-            'facility_id'          => $facility->id,
+            'facility_id'          => $tech->facility_id,
             'reservation_strategy' => 'deduct_at_close',
         ];
 

@@ -104,8 +104,8 @@ class InventoryServiceTest extends TestCase
 
         [$out, $in] = $this->service->transfer($item, $from, $to, 40.0, $user->id);
 
-        $this->assertEquals('outbound', $out->transaction_type);
-        $this->assertEquals('inbound', $in->transaction_type);
+        $this->assertEquals('transfer', $out->transaction_type);
+        $this->assertEquals('transfer', $in->transaction_type);
 
         $fromLevel = StockLevel::where('item_id', $item->id)->where('storeroom_id', $from->id)->first();
         $toLevel   = StockLevel::where('item_id', $item->id)->where('storeroom_id', $to->id)->first();

@@ -36,11 +36,10 @@ class DedupController extends Controller
         $user = $request->user();
         $requestedFacilityId = $request->integer('facility_id') ?: null;
 
-        // Tenant isolation: non-admins are pinned to their own facility
-        // regardless of what facility_id they pass. Admins may query
-        // any facility or all facilities (null).
-        if ($user->isAdmin() || $user->facility_id === null) {
+        if ($user->isAdmin()) {
             $facilityId = $requestedFacilityId;
+        } elseif ($user->facility_id === null) {
+            abort(403, 'Account has no facility assignment.');
         } else {
             if ($requestedFacilityId !== null && $requestedFacilityId !== (int) $user->facility_id) {
                 abort(403, 'Cannot query dedup candidates for another facility.');

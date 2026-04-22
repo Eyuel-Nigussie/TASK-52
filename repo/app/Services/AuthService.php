@@ -16,29 +16,35 @@ class AuthService
 {
     public function __construct(private readonly AuditService $audit) {}
 
-    public function attempt(string $username, string $password, string $ip, ?string $captchaToken = null): array
+    public function attempt(string $username, string $password, string $ip, ?string $captchaToken = null, ?string $deviceId = null): array
     {
         $maxAttempts = (int) config('vetops.max_login_attempts', 10);
         $windowMinutes = (int) config('vetops.login_window_minutes', 10);
         $captchaAfter = (int) config('vetops.captcha_after', 5);
 
-        $recentFailures = LoginAttempt::recentFailures($ip, $windowMinutes);
+        // Key throttle by workstation ID so shared-IP clinic networks don't
+        // lock out one terminal when another is under attack.
+        $throttleKey = $deviceId ?? $ip;
+
+        $recentFailures = LoginAttempt::recentFailures($throttleKey, $windowMinutes);
         $captchaRequired = $recentFailures >= $captchaAfter;
 
         if ($recentFailures >= $maxAttempts) {
             LoginAttempt::create([
-                'username' => $username,
-                'ip_address' => $ip,
-                'success' => false,
+                'username'         => $username,
+                'ip_address'       => $ip,
+                'device_id'        => $deviceId,
+                'throttle_key'     => $throttleKey,
+                'success'          => false,
                 'captcha_required' => true,
-                'attempted_at' => now(),
+                'attempted_at'     => now(),
             ]);
             throw ValidationException::withMessages([
                 'username' => ['Too many login attempts. Please wait before trying again.'],
             ]);
         }
 
-        if ($captchaRequired && !$this->validateCaptchaToken($ip, $captchaToken)) {
+        if ($captchaRequired && !$this->validateCaptchaToken($throttleKey, $captchaToken)) {
             throw ValidationException::withMessages([
                 'captcha_token' => ['Incorrect CAPTCHA answer. Please try again.'],
             ]);
@@ -48,11 +54,13 @@ class AuthService
 
         if (!$user || !Hash::check($password, $user->password) || !$user->active) {
             LoginAttempt::create([
-                'username' => $username,
-                'ip_address' => $ip,
-                'success' => false,
+                'username'         => $username,
+                'ip_address'       => $ip,
+                'device_id'        => $deviceId,
+                'throttle_key'     => $throttleKey,
+                'success'          => false,
                 'captcha_required' => $captchaRequired,
-                'attempted_at' => now(),
+                'attempted_at'     => now(),
             ]);
             $this->audit->logLogin($username, false, $ip);
             throw ValidationException::withMessages([
@@ -61,11 +69,13 @@ class AuthService
         }
 
         LoginAttempt::create([
-            'username' => $username,
-            'ip_address' => $ip,
-            'success' => true,
+            'username'         => $username,
+            'ip_address'       => $ip,
+            'device_id'        => $deviceId,
+            'throttle_key'     => $throttleKey,
+            'success'          => true,
             'captcha_required' => false,
-            'attempted_at' => now(),
+            'attempted_at'     => now(),
         ]);
 
         $user->update(['last_login_at' => now()]);
@@ -162,22 +172,22 @@ class AuthService
         }
     }
 
-    public function requiresCaptcha(string $ip): bool
+    public function requiresCaptcha(string $throttleKey): bool
     {
         return LoginAttempt::requiresCaptcha(
-            $ip,
+            $throttleKey,
             (int) config('vetops.login_window_minutes', 10),
             (int) config('vetops.captcha_after', 5),
         );
     }
 
-    public function getCaptchaChallenge(string $ip): array
+    public function getCaptchaChallenge(string $throttleKey): array
     {
-        if (!$this->requiresCaptcha($ip)) {
+        if (!$this->requiresCaptcha($throttleKey)) {
             return ['captcha_required' => false];
         }
 
-        $cacheKey = "vetops.captcha:{$ip}";
+        $cacheKey = "vetops.captcha:{$throttleKey}";
         $cached = Cache::get($cacheKey);
 
         if ($cached) {
@@ -193,12 +203,12 @@ class AuthService
         return ['captcha_required' => true, 'challenge' => $challenge];
     }
 
-    public function validateCaptchaToken(string $ip, ?string $token): bool
+    private function validateCaptchaToken(string $throttleKey, ?string $token): bool
     {
         if (!$token) {
             return false;
         }
-        $cached = Cache::get("vetops.captcha:{$ip}");
+        $cached = Cache::get("vetops.captcha:{$throttleKey}");
         return $cached !== null && $cached['answer'] === trim($token);
     }
 }

@@ -29,8 +29,7 @@ class FacilityPolicy
         if ($user->facility_id !== null) {
             return $user->facility_id === $facility->id;
         }
-        // Legacy unassigned non-admin — UserController blocks creating new ones.
-        return true;
+        return false;
     }
 
     public function viewUnmaskedPhone(User $user, Facility $facility): bool

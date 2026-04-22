@@ -15,9 +15,8 @@ class DepartmentTest extends TestCase
 
     public function test_can_list_departments(): void
     {
-        $this->actingAsTechnicianDoctor();
-        $facility = Facility::factory()->create();
-        Department::factory()->count(3)->create(['facility_id' => $facility->id]);
+        $tech = $this->actingAsTechnicianDoctor();
+        Department::factory()->count(3)->create(['facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/departments');
 
@@ -27,7 +26,7 @@ class DepartmentTest extends TestCase
 
     public function test_can_filter_departments_by_facility(): void
     {
-        $this->actingAsTechnicianDoctor();
+        $this->actingAsAdmin();
         $facility1 = Facility::factory()->create();
         $facility2 = Facility::factory()->create();
         Department::factory()->count(2)->create(['facility_id' => $facility1->id]);
@@ -58,11 +57,10 @@ class DepartmentTest extends TestCase
 
     public function test_manager_can_create_department(): void
     {
-        $this->actingAsManager();
-        $facility = Facility::factory()->create();
+        $manager = $this->actingAsManager();
 
         $response = $this->postJson('/api/departments', [
-            'facility_id'  => $facility->id,
+            'facility_id'  => $manager->facility_id,
             'external_key' => 'DEPT-002',
             'name'         => 'Emergency',
         ]);
@@ -154,9 +152,9 @@ class DepartmentTest extends TestCase
 
     public function test_active_only_filter_works(): void
     {
-        $this->actingAsTechnicianDoctor();
-        Department::factory()->create(['active' => true]);
-        Department::factory()->create(['active' => false]);
+        $tech = $this->actingAsTechnicianDoctor();
+        Department::factory()->create(['active' => true, 'facility_id' => $tech->facility_id]);
+        Department::factory()->create(['active' => false, 'facility_id' => $tech->facility_id]);
 
         $response = $this->getJson('/api/departments?active_only=1');
 

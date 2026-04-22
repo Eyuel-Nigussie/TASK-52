@@ -164,8 +164,8 @@ class CoverageExpansionTest extends TestCase
 
         [$out, $in] = $inv->transfer($item, $from, $to, 10, 1);
 
-        $this->assertEquals('outbound', $out->transaction_type);
-        $this->assertEquals('inbound', $in->transaction_type);
+        $this->assertEquals('transfer', $out->transaction_type);
+        $this->assertEquals('transfer', $in->transaction_type);
         $this->assertEquals(10.0, (float) $out->quantity);
         $this->assertEquals(10.0, (float) $in->quantity);
     }
