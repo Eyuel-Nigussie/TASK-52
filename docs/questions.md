@@ -1,77 +1,77 @@
-# Q1. Raw Long-Lived Auth Token Stored in Unencrypted Cookie
+# Q1. Workstation Identity for Per-Workstation Rate Limiting
 
-**Question:** The `vetops_session` cookie was explicitly excluded from Laravel's `EncryptCookies` middleware via `$middleware->encryptCookies(except: ['vetops_session'])` in `bootstrap/app.php`, and the raw Sanctum token was stored directly as the cookie value. Why is this a high-severity vulnerability, and what is the correct mitigation?
+**Question:** The prompt specifies "max 10 login attempts per 10 minutes per workstation," but does not define how a workstation is identified on the local LAN. Devices behind a shared router or switch share the same public IP. Should the rate limiter key on IP address, browser fingerprint, a device UUID, or something else?
 
-**My understanding:** Storing a raw bearer token in a plaintext cookie means any attacker who can read the cookie (via XSS, network sniffing on HTTP, or physical access to browser storage) instantly gains a fully functional API credential that never rotates. The `EncryptCookies` middleware exclusion was probably added as a workaround to allow the refresh endpoint to read the cookie server-side, but it trades security for convenience.
+**My understanding:** On a clinic LAN, multiple exam-room terminals share the same NAT IP. Keying the throttle purely on IP would mean that a brute-force attempt from one terminal locks out all other terminals at the same site simultaneously — defeating the "per workstation" intent. A stable client-side identifier is needed.
 
-**Solution:** Remove the `encryptCookies` exception so all cookies are encrypted by Laravel's default mechanism. In `AuthController::sessionCookie()`, store `encrypt($token)` as the cookie value so the raw token is never written to the browser in cleartext. In `AuthController::refresh()`, decrypt the cookie value with `decrypt($rawCookie)` before using it as a bearer token, wrapping the call in a try/catch to return a 422 on tampered or expired cookies. In tests, use `disableCookieEncryption()` combined with `withCookie('vetops_session', encrypt($token))` to prevent the framework from double-encrypting the value.
-
----
-
-# Q2. Clinic Manager Can Export All Facilities (Cross-Facility Data Leakage)
-
-**Question:** The facility export endpoint (`GET /api/facilities/export`) called `$this->importService->export('facility')` without any facility scoping filter, meaning a clinic manager could download a CSV containing every facility's sensitive data (addresses, phone numbers, business hours). How should the export be scoped by role?
-
-**My understanding:** The index endpoint already inline-scopes to `WHERE id = user->facility_id` for non-admin users, but the export path bypassed this because `ImportService::export('facility')` accepted no filter arguments at the time. The `ImportService` needed to be extended to accept and apply a `facility_id` filter when one is provided.
-
-**Solution:** In `FacilityController::export()`, compute `$filters = !$user->isAdmin() && $user->facility_id !== null ? ['facility_id' => $user->facility_id] : []` and pass `$filters` to `$this->importService->export('facility', $filters)`. In `ImportService::export()`, extend the `'facility'` case to apply `->when(isset($filters['facility_id']), fn($q) => $q->where('id', $filters['facility_id']))` before calling `->get()`. This ensures managers export only their own facility's row while system admins get all rows.
+**Solution:** Generate a UUID v4 device identifier in the browser on first load, persist it in `localStorage` under `vetops.device_id`, and include it as an `X-Device-ID` request header on every login and captcha-status call. On the server, derive `$throttleKey = X-Device-ID ?? $request->ip()` and key both the `LoginAttempt` table (`throttle_key` column) and the Laravel named rate-limiter (`RateLimiter::for('login', ...)`) on that value. Non-browser clients (e.g. CLI scripts) fall back to IP, which matches the spirit of the requirement.
 
 ---
 
-# Q3. Null-Facility Non-Admin Accounts Permissive Across Tenant Boundaries
+# Q2. Unauthenticated Tablet Review Submission Scope
 
-**Question:** Users with `facility_id = null` who are not system admins could bypass facility scoping in `ScopesByFacility::applyFacilityScope()` and in policies like `PatientPolicy`, `VisitPolicy`, `RentalAssetPolicy`, `ServiceOrderPolicy`, and `StocktakeSessionPolicy`. Why is a null facility treated as permissive, and how should it be treated instead?
+**Question:** The prompt says staff hand a tablet to the pet owner after a visit to submit a review, but pet owners have no portal accounts. How is the review scoped to the correct visit? What prevents a tablet user from submitting fake reviews for visits they were not part of, or browsing other owners' records?
 
-**My understanding:** The original code had a default-allow fallback for null-facility non-admins: "if the user has no facility, don't filter". This was likely a legacy shortcut for superusers before the `system_admin` role was added. But it creates a privilege-escalation path — any non-admin account without a facility assignment effectively bypasses tenant isolation for lists and object-level reads.
+**My understanding:** Because pet owners are unauthenticated, the only viable scoping mechanism is the visit identifier itself. Staff must open the review flow for a specific visit before handing the tablet over, giving the owner a URL or QR code that embeds the visit ID. The endpoint must be designed so that possessing the visit ID is the only credential required, and no other patient or visit data must be reachable from that endpoint.
 
-**Solution:** In `ScopesByFacility::applyFacilityScope()`, change the null-facility non-admin branch to `return $query->whereRaw('1 = 0')` so the query returns nothing. In each policy's ownership helper (e.g., `userOwnsFacility`, `sharesFacility`, `view`), return `false` when `$user->facility_id === null` and the user is not an admin. Update all `actingAs*` test helpers to create users with a factory-assigned facility so test data is in the correct tenant scope.
-
----
-
-# Q4. Visit Creation Accepts Foreign `service_order_id` Without Facility Consistency Validation
-
-**Question:** The `VisitController::store()` validated that `patient_id` and `doctor_id` belong to the visit's facility, but omitted the same check for the optional `service_order_id`. What cross-tenant integrity problem does this introduce, and how is it fixed?
-
-**My understanding:** If a user submits a `service_order_id` that belongs to a different facility, the newly created visit record references a service order from another tenant. This can expose cross-tenant data when the visit or order is later loaded with relationships, and it makes the facility boundary for service orders inconsistent.
-
-**Solution:** In `VisitController::store()`, after the patient and doctor facility checks, add: `if (!empty($data['service_order_id'])) { $serviceOrder = ServiceOrder::findOrFail($data['service_order_id']); if ((int) $serviceOrder->facility_id !== $facilityId) { throw ValidationException::withMessages(['service_order_id' => ['Service order belongs to a different facility than this visit.']]); } }`. Add the `use App\Models\ServiceOrder;` import. Regression-test with a cross-facility service order to confirm 422 is returned.
+**Solution:** Expose `POST /api/reviews/visits/{visit}/submit` as a fully public, unauthenticated endpoint. The visit ID in the URL acts as the access token; the endpoint returns only what is needed for the submission form (visit date, clinic name) and accepts only the review payload (rating, tags, text, up to 5 images). Apply a per-IP rate limit (`throttle:10,60`) to prevent bulk fake submissions. No PII from other visits is reachable, and each submission is immutable once created.
 
 ---
 
-# Q5. Overdue Minutes Computation Mathematically Incorrect
+# Q3. Inventory Reservation Strategy: Stock Exhaustion Between Order Creation and Close
 
-**Question:** `RentalTransaction::overdueMinutes()` was computing `(int) $now->diffInMinutes($expected->copy()->addHours($overdueThreshold * 2))`. Why is `* 2` wrong, and why does the direction of `diffInMinutes` matter?
+**Question:** The prompt offers two reservation strategies per service order — "lock inventory at order creation" vs. "deduct when the order is closed." Under the deduct-at-close strategy, what should happen if the on-hand quantity drops below the required amount between when the order was created and when it is eventually closed?
 
-**My understanding:** The intent is to return the number of minutes a rental has been overdue past its grace threshold — i.e., `now - (expected_return + threshold)`. Multiplying by 2 doubled the threshold, making the grace period appear twice as long. Additionally, Carbon's `diffInMinutes($other)` returns a signed value (`$other - $this`), so calling `$now->diffInMinutes(past_time)` produces a negative result when `past_time < $now`.
+**My understanding:** With deduct-at-close, the system does not hold the stock, so a concurrent issue or transfer can consume the same units another order is expecting. If the close is allowed to proceed regardless, the ledger goes negative and the available-to-promise calculation is violated. The system needs an explicit policy for this conflict.
 
-**Solution:** Remove `* 2` from the threshold and reverse the operand order so the computation is `$expected->copy()->addHours($overdueThreshold)->diffInMinutes($now)`, which yields `now - (expected + threshold)` — a positive number when overdue. Update the `ExpandedModelBehaviorMatrixTest` data provider to match: change the hardcoded `active_past_threshold` expected value from `90` to `30`, and change the generated-matrix formula from `$now->diffInMinutes($expected->copy()->addHours($threshold * 2))` to `$expected->copy()->addHours($threshold)->diffInMinutes($now)`.
-
----
-
-# Q6. Review Hide Audit Trail Records Incorrect Old Status
-
-**Question:** In `ReviewService::hide()`, the audit log call was made after `$review->update(['status' => 'hidden'])`, meaning `$old` captured the post-update state (status already `'hidden'`) rather than the pre-update state. What is the forensic impact and how is it fixed?
-
-**My understanding:** The audit log exists to record what changed and from what state. If the `$old` snapshot is taken after the mutating `update()` call, both `old` and `new` will show `status: 'hidden'`, making it impossible to reconstruct the original review state from the audit trail. This reduces the forensic reliability of the moderation log.
-
-**Solution:** In `ReviewService::hide()`, capture `$oldStatus = $review->status;` before calling `$review->update(['status' => 'hidden'])`. Then pass `['status' => $oldStatus]` as the `old_values` argument to the audit log call and `['status' => 'hidden']` as the `new_values` argument. This ensures the audit record correctly shows the transition from the prior status to `'hidden'`.
+**Solution:** At order-close time, re-validate available-to-promise before posting the ledger deduction. If ATP is insufficient, reject the close with a `422` error message naming the item and the shortfall quantity, requiring the clinician to either adjust the quantity or switch to a manual adjustment entry. The `deduct_at_close` strategy is documented as "optimistic" — it assumes stock will be available and fails explicitly if it is not, rather than silently going negative.
 
 ---
 
-# Q7. Inventory Transfer Not Recorded as Explicit `transfer` Ledger Type
+# Q4. Content Targeting Logic: Conjunction or Disjunction Across Dimensions
 
-**Question:** `InventoryService::transfer()` was creating two `StockLedger` entries with `transaction_type => 'outbound'` and `'inbound'` respectively. The config already defined a `'transfer'` ledger type. Why does using `outbound`/`inbound` reduce traceability, and what is the correct fix?
+**Question:** The prompt states content can be targeted "by facility, department, role, and tags." When multiple targeting dimensions are set simultaneously — for example, `facility = Clinic A` and `role = inventory_clerk` — does a staff member need to match ALL dimensions (AND) or ANY dimension (OR) to see the item?
 
-**My understanding:** Using generic `outbound`/`inbound` types for transfers makes it impossible to distinguish a transfer from an ordinary issue or receipt when querying the ledger. Analytic queries like "show all cross-storeroom movements" cannot be answered without inspecting the `from_storeroom_id`/`to_storeroom_id` fields as a heuristic. The `'transfer'` enum value was already defined in `config/vetops.php`, indicating the design intended a dedicated type.
+**My understanding:** AND semantics make targeting restrictive and precise (only inventory clerks at Clinic A see it), while OR semantics make it additive (any inventory clerk anywhere, or anyone at Clinic A). These produce very different visibility results. The prompt does not disambiguate. For a clinical communications tool, AND semantics are safer by default — accidental over-sharing of sensitive announcements is worse than under-sharing.
 
-**Solution:** Change both `StockLedger::create()` calls in `InventoryService::transfer()` to use `'transaction_type' => 'transfer'`. Update the `InventoryServiceTest::test_transfer_moves_stock_between_storerooms` assertion from checking `'outbound'`/`'inbound'` to checking `'transfer'` for both the `$out` and `$in` entries. Update the `CoverageExpansionTest::test_inventory_transfer_creates_paired_ledger_entries` assertions similarly.
+**Solution:** Implement AND semantics across dimensions: a content item is visible to a user only if the user satisfies every non-empty targeting dimension simultaneously (facility match AND role match AND department match AND tag match). Store targeting as a JSON object on the `content_items` row. An empty or null dimension means "no restriction on that axis." Add a preview button in the authoring UI that shows which roles and facilities will see the item given current targeting settings, so editors can verify intent before submitting for approval.
 
 ---
 
-# Q8. Security Tests Assert Broad Status Set, Reducing Defect Detection Strength
+# Q5. Overdue Asset Transition: Background Job or On-Demand Check
 
-**Question:** `SecurityTest::test_inactive_user_cannot_access_api` used `$this->assertContains([200, 401, 403], ...)` (or equivalent broad assertions). Why does this weaken the test, and what additional production fix is required?
+**Question:** The prompt states "assets auto-transition to 'overdue' after 2 hours past scheduled return." It is unclear whether this transition is driven by a scheduled background job that updates records in the database, or whether "overdue" is a derived/computed state evaluated on-demand each time the asset or transaction is read.
 
-**My understanding:** Asserting that the status is "one of several acceptable values" means the test passes even when an inactive user receives a `200 OK` — i.e., gets full API access. The test was written defensively to avoid brittleness, but it accidentally allowed the actual security regression (inactive users with valid tokens can access the API) to go undetected.
+**My understanding:** A background job approach updates rows in place, making the status queryable directly in SQL (useful for dashboards and alerts), but requires a reliable scheduler and risks stale data if the job is delayed. A computed-on-read approach is always accurate but means the `status` column in the database does not reflect overdue state, complicating queries and audit logs.
 
-**Solution:** Tighten the assertion to `$this->assertNotEquals(200, $response->status())` to ensure inactive users are definitely not getting data back. Additionally, fix the underlying security gap: create an `EnsureUserIsActive` middleware that checks `$user->active === false` and returns `403` with `{'message': 'Account is disabled.'}`. Register this middleware in the API group in `bootstrap/app.php` (appended after `EnsureFrontendRequestsAreStateful`) so it runs on every authenticated API request.
+**Solution:** Use a hybrid: store `status` on `rental_transactions` as a persisted column, and run a scheduled artisan command (`rental:mark-overdue`) every 15 minutes via the Laravel scheduler to transition `active` transactions whose `expected_return_at + 2 hours < now()` to `overdue`. The `RentalTransaction` model also exposes `isOverdue()` and `overdueMinutes()` computed helpers for real-time display in the UI so the countdown is always accurate regardless of when the background job last ran.
+
+---
+
+# Q6. Near-Duplicate Announcement Detection: Threshold and User-Facing Flow
+
+**Question:** The prompt specifies SimHash/MinHash for detecting near-duplicate announcements, but does not define the similarity threshold at which content is flagged, nor the user-facing behavior — should a near-duplicate block the save, show a warning the editor can dismiss, or route to a manager for comparison?
+
+**My understanding:** Too strict a threshold produces false positives (flagging legitimately similar but intentionally distinct announcements). Too loose a threshold lets true duplicates through. The appropriate UX also matters: a hard block is frustrating if the editor is intentionally creating a closely related piece; a silent warning might be ignored; a required confirmation strikes a balance.
+
+**Solution:** Set the SimHash Hamming-distance threshold at 10 bits (out of 64), which empirically flags documents sharing roughly 85%+ of their content fingerprint. When a new draft's fingerprint is within threshold of an existing published or in-review item, return a `409` response with the duplicate candidate's title and ID. The editor UI renders a side-by-side diff modal and requires the editor to either confirm creation (proceeds with a `force: true` flag) or discard. Confirmed near-duplicates are stored with a `duplicate_of` reference for audit purposes.
+
+---
+
+# Q7. Entity Merge Scope: Can Managers Merge Across Facilities?
+
+**Question:** The prompt states "merges require manager confirmation and record conflict resolution rules." It does not specify whether a clinic manager can merge entities that belong to different facilities — for example, a doctor record at Clinic A with a suspected duplicate at Clinic B — or whether cross-facility merges are admin-only.
+
+**My understanding:** Clinic managers are scoped to their own facility in every other part of the system. Allowing a manager at Clinic A to alter or absorb records at Clinic B violates the facility isolation guarantee. Cross-facility deduplication is a data-governance action that could have legal and billing implications, so it should require elevated privilege.
+
+**Solution:** Scope merge-request creation and approval to the `system_admin` role for cross-facility cases. A `clinic_manager` may only create and approve merge requests where both the `source_id` and `target_id` entities belong to their own facility. The `MergeRequest` model stores `facility_id`; the `MergeRequestPolicy` enforces that non-admin users' facility must match that field. The dedup candidates endpoint (`GET /api/dedup/candidates`) aborts with `403` for null-facility non-admins rather than silently returning nothing.
+
+---
+
+# Q8. PII Masking Scope: Which Roles See Unmasked Owner Phone Numbers?
+
+**Question:** The prompt states owner phone numbers are masked to `(555) ***-1234` in "non-admin views," but the RBAC table defines six roles including `clinic_manager` who has significant data access. Is the clinic manager a "non-admin" for PII purposes, or do managers need unmasked phone numbers to contact pet owners about their animals?
+
+**My understanding:** Operationally, clinic managers routinely need to call pet owners to reschedule appointments, discuss treatment plans, or follow up after a visit. Masking the number for managers would require them to route every call through a system admin, which is impractical. However, giving all six roles access to raw PII defeats the purpose of masking. The line should be drawn at roles that have a legitimate operational need for the contact detail.
+
+**Solution:** Allow unmasked phone number access to `system_admin` and `clinic_manager` only. All other roles (`inventory_clerk`, `technician_doctor`, `content_editor`, `content_approver`) receive the masked format. Implement this in `Patient::getMaskedPhoneAttribute()` and expose it via a separate `phone_masked` field in API responses; controllers call `$user->can('viewUnmaskedPii', $patient)` before deciding which field to include. Gate `viewUnmaskedPii` in `AuthServiceProvider` to the two privileged roles.
