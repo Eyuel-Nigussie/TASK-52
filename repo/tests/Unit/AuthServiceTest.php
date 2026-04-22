@@ -88,6 +88,7 @@ class AuthServiceTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'baduser',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -105,6 +106,7 @@ class AuthServiceTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'bad',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -146,6 +148,7 @@ class AuthServiceTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'tryhard',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);
@@ -169,6 +172,7 @@ class AuthServiceTest extends TestCase
             LoginAttempt::create([
                 'username'     => 'burn',
                 'ip_address'   => $ip,
+                'throttle_key' => $ip,
                 'success'      => false,
                 'attempted_at' => now(),
             ]);

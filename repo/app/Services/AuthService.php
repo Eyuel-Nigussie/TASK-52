@@ -203,7 +203,7 @@ class AuthService
         return ['captcha_required' => true, 'challenge' => $challenge];
     }
 
-    private function validateCaptchaToken(string $throttleKey, ?string $token): bool
+    public function validateCaptchaToken(string $throttleKey, ?string $token): bool
     {
         if (!$token) {
             return false;
