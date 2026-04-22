@@ -1,70 +1,53 @@
-# Design Questions, Assumptions & Decisions
-
-This document captures non-obvious design decisions made during the VetOps Portal build, grouped as:
-- **Question** — what was ambiguous or underspecified
-- **Assumption** — what we chose to assume when the Prompt did not say
-- **Solution** — how it was implemented
-
-The goal is to make the delivery statically reviewable without guessing at the author's intent.
+Q1. Raw Long-Lived Auth Token Stored in Unencrypted Cookie
+Question: The `vetops_session` cookie was explicitly excluded from Laravel's `EncryptCookies` middleware via `$middleware->encryptCookies(except: ['vetops_session'])` in `bootstrap/app.php`, and the raw Sanctum token was stored directly as the cookie value. Why is this a high-severity vulnerability, and what is the correct mitigation?
+My understanding: Storing a raw bearer token in a plaintext cookie means any attacker who can read the cookie (via XSS, network sniffing on HTTP, or physical access to browser storage) instantly gains a fully functional API credential that never rotates. The `EncryptCookies` middleware exclusion was probably added as a workaround to allow the refresh endpoint to read the cookie server-side, but it trades security for convenience.
+Solution: Remove the `encryptCookies` exception so all cookies are encrypted by Laravel's default mechanism. In `AuthController::sessionCookie()`, store `encrypt($token)` as the cookie value so the raw token is never written to the browser in cleartext. In `AuthController::refresh()`, decrypt the cookie value with `decrypt($rawCookie)` before using it as a bearer token, wrapping the call in a try/catch to return a 422 on tampered or expired cookies. In tests, use `disableCookieEncryption()` combined with `withCookie('vetops_session', encrypt($token))` to prevent the framework from double-encrypting the value.
 
 ---
 
-## 1. What field authenticates a user on login — email, username, or both?
+Q2. Clinic Manager Can Export All Facilities (Cross-Facility Data Leakage)
+Question: The facility export endpoint (`GET /api/facilities/export`) called `$this->importService->export('facility')` without any facility scoping filter, meaning a clinic manager could download a CSV containing every facility's sensitive data (addresses, phone numbers, business hours). How should the export be scoped by role?
+My understanding: The index endpoint already inline-scopes to `WHERE id = user->facility_id` for non-admin users, but the export path bypassed this because `ImportService::export('facility')` accepted no filter arguments at the time. The `ImportService` needed to be extended to accept and apply a `facility_id` filter when one is provided.
+Solution: In `FacilityController::export()`, compute `$filters = !$user->isAdmin() && $user->facility_id !== null ? ['facility_id' => $user->facility_id] : []` and pass `$filters` to `$this->importService->export('facility', $filters)`. In `ImportService::export()`, extend the `'facility'` case to apply `->when(isset($filters['facility_id']), fn($q) => $q->where('id', $filters['facility_id']))` before calling `->get()`. This ensures managers export only their own facility's row while system admins get all rows.
 
-- **Assumption:** Veterinary staff typically have short internal usernames; email may not be unique across clinics.
-- **Solution:** Login accepts `username` + `password` (see `AuthController::login`, `routes/api.php` `POST /api/auth/login`). Email is a nullable profile field but is not an auth identifier.
+---
 
-## 2. How strict should the inactivity timeout be, and how is it measured?
+Q3. Null-Facility Non-Admin Accounts Permissive Across Tenant Boundaries
+Question: Users with `facility_id = null` who are not system admins could bypass facility scoping in `ScopesByFacility::applyFacilityScope()` and in policies like `PatientPolicy`, `VisitPolicy`, `RentalAssetPolicy`, `ServiceOrderPolicy`, and `StocktakeSessionPolicy`. Why is a null facility treated as permissive, and how should it be treated instead?
+My understanding: The original code had a default-allow fallback for null-facility non-admins: "if the user has no facility, don't filter". This was likely a legacy shortcut for superusers before the `system_admin` role was added. But it creates a privilege-escalation path — any non-admin account without a facility assignment effectively bypasses tenant isolation for lists and object-level reads.
+Solution: In `ScopesByFacility::applyFacilityScope()`, change the null-facility non-admin branch to `return $query->whereRaw('1 = 0')` so the query returns nothing. In each policy's ownership helper (e.g., `userOwnsFacility`, `sharesFacility`, `view`), return `false` when `$user->facility_id === null` and the user is not an admin. Update all `actingAs*` test helpers to create users with a factory-assigned facility so test data is in the correct tenant scope.
 
-- **Assumption:** Sanctum's built-in `last_used_at` is overwritten on every request, so it cannot detect idle time. A separate checkpoint is required.
-- **Solution:** `InactivityTimeoutMiddleware` keeps a per-token `vetops.token_idle:{token_id}` value in the cache. If the gap between cached last-seen and now exceeds the user's `inactivity_timeout` (minutes, default 15), the token is deleted and the request returns `401 SESSION_EXPIRED`. Covered by `tests/Feature/InactivityTimeoutTest.php`.
+---
 
-## 3. How is rental deposit calculated, and what is the minimum?
+Q4. Visit Creation Accepts Foreign `service_order_id` Without Facility Consistency Validation
+Question: The `VisitController::store()` validated that `patient_id` and `doctor_id` belong to the visit's facility, but omitted the same check for the optional `service_order_id`. What cross-tenant integrity problem does this introduce, and how is it fixed?
+My understanding: If a user submits a `service_order_id` that belongs to a different facility, the newly created visit record references a service order from another tenant. This can expose cross-tenant data when the visit or order is later loaded with relationships, and it makes the facility boundary for service orders inconsistent.
+Solution: In `VisitController::store()`, after the patient and doctor facility checks, add: `if (!empty($data['service_order_id'])) { $serviceOrder = ServiceOrder::findOrFail($data['service_order_id']); if ((int) $serviceOrder->facility_id !== $facilityId) { throw ValidationException::withMessages(['service_order_id' => ['Service order belongs to a different facility than this visit.']]); } }`. Add the `use App\Models\ServiceOrder;` import. Regression-test with a cross-facility service order to confirm 422 is returned.
 
-- **Assumption:** `VETOPS_DEPOSIT_RATE` (0.20 default) of replacement cost, with a `VETOPS_DEPOSIT_MIN` floor (default $50).
-- **Solution:** `RentalAsset::calculateDeposit()` returns `max(replacement_cost * rate, min)`. Applied on create and on replacement-cost updates. Tests: `tests/Unit/RentalPricingTest.php`, `tests/Feature/RentalAssetTest.php::test_deposit_auto_calculated_on_create`, `::test_deposit_minimum_enforced`.
+---
 
-## 4. When is a stocktake variance "material" enough to require manager approval?
+Q5. Overdue Minutes Computation Mathematically Incorrect
+Question: `RentalTransaction::overdueMinutes()` was computing `(int) $now->diffInMinutes($expected->copy()->addHours($overdueThreshold * 2))`. Why is `* 2` wrong, and why does the direction of `diffInMinutes` matter?
+My understanding: The intent is to return the number of minutes a rental has been overdue past its grace threshold — i.e., `now - (expected_return + threshold)`. Multiplying by 2 doubled the threshold, making the grace period appear twice as long. Additionally, Carbon's `diffInMinutes($other)` returns a signed value (`$other - $this`), so calling `$now->diffInMinutes(past_time)` produces a negative result when `past_time < $now`.
+Solution: Remove `* 2` from the threshold and reverse the operand order so the computation is `$expected->copy()->addHours($overdueThreshold)->diffInMinutes($now)`, which yields `now - (expected + threshold)` — a positive number when overdue. Update the `ExpandedModelBehaviorMatrixTest` data provider to match: change the hardcoded `active_past_threshold` expected value from `90` to `30`, and change the generated-matrix formula from `$now->diffInMinutes($expected->copy()->addHours($threshold * 2))` to `$expected->copy()->addHours($threshold)->diffInMinutes($now)`.
 
-- **Assumption:** >5% absolute variance between counted and system quantity triggers approval; threshold is configurable via `VETOPS_STOCKTAKE_VARIANCE_PCT`.
-- **Solution:** Variance is calculated in `InventoryService::recordStocktakeEntry`. Entries above threshold get `requires_approval = true`. Session cannot be applied until every such entry is individually approved with a reason ≥10 chars. Tests: `StocktakeTest` (9 cases), `StocktakeVarianceTest`.
+---
 
-## 5. Do duplicate/near-duplicate content items need to be blocked at creation?
+Q6. Review Hide Audit Trail Records Incorrect Old Status
+Question: In `ReviewService::hide()`, the audit log call was made after `$review->update(['status' => 'hidden'])`, meaning `$old` captured the post-update state (status already `'hidden'`) rather than the pre-update state. What is the forensic impact and how is it fixed?
+My understanding: The audit log exists to record what changed and from what state. If the `old_values` snapshot is taken after the mutating `update()` call, both `old` and `new` will show `status: 'hidden'`, making it impossible to reconstruct the original review state from the audit trail. This reduces the forensic reliability of the moderation log.
+Solution: In `ReviewService::hide()`, capture `$oldStatus = $review->status;` before calling `$review->update(['status' => 'hidden'])`. Then pass `['status' => $oldStatus]` as the `old_values` argument to the audit log call and `['status' => 'hidden']` as the `new_values` argument. This ensures the audit record correctly shows the transition from the prior status to `'hidden'`.
 
-- **Assumption:** Yes — to prevent accidental re-posting; authors can override with `force_create=true`.
-- **Solution:** `ContentService::draft` computes a 64-bit SimHash fingerprint; if Hamming distance to an existing item ≤ 6, the request returns `422` with a `body` validation error. Bypass via `force_create`. Tests: `ContentPublishingTest::test_near_duplicate_detection_blocks_similar_content`, `::test_force_create_bypasses_dedup_check`, `SimHashTest`.
+---
 
-## 6. How is patient PII (phone number) stored and exposed?
+Q7. Inventory Transfer Not Recorded as Explicit `transfer` Ledger Type
+Question: `InventoryService::transfer()` was creating two `StockLedger` entries with `transaction_type => 'outbound'` and `'inbound'` respectively. The config already defined a `'transfer'` ledger type. Why does using `outbound`/`inbound` reduce traceability, and what is the correct fix?
+My understanding: Using generic `outbound`/`inbound` types for transfers makes it impossible to distinguish a transfer from an ordinary issue or receipt when querying the ledger. Analytic queries like "show all cross-storeroom movements" cannot be answered without inspecting the `from_storeroom_id`/`to_storeroom_id` fields as a heuristic. The `'transfer'` enum value was already defined in `config/vetops.php`, indicating the design intended a dedicated type.
+Solution: Change both `StockLedger::create()` calls in `InventoryService::transfer()` to use `'transaction_type' => 'transfer'`. Update the `InventoryServiceTest::test_transfer_moves_stock_between_storerooms` assertion from checking `'outbound'`/`'inbound'` to checking `'transfer'` for both the `$out` and `$in` entries. Update the `CoverageExpansionTest::test_inventory_transfer_creates_paired_ledger_entries` assertions similarly.
 
-- **Assumption:** Encrypted at rest via Laravel's `encrypt()/decrypt()` helpers; masked in API responses for non-admin users.
-- **Solution:** Patient/doctor/facility/user models all store `*_phone_encrypted` columns (`$hidden` in the model). Controllers read `$user->isAdmin() ? ->getPhone() : ->getMaskedPhone()`. The masked format is `(XXX) ***-XXXX`. Tests: `SecurityTest`, `PhoneMaskingTest`, `FacilityTest`, `DoctorPatientTest`, `UserTest`.
+---
 
-## 7. Is the audit log truly immutable, or only "write-mostly"?
-
-- **Assumption:** Immutable. Updates and deletes must be blocked at the model layer to survive direct-ORM mistakes; bulk retention purge is the only legitimate deletion path and runs via a dedicated Artisan command with elevated privileges.
-- **Solution:** `AuditLog::boot()` registers `updating` and `deleting` observers that silently abort both operations. The `vetops:purge-audit-logs` command uses `DB::table()` to bypass the immutability hook for retention-based deletion only. Retention window is `VETOPS_AUDIT_RETENTION_YEARS` (default 7). Tests: `AuditLogTest::test_audit_log_immutable`, `::test_audit_log_not_deletable`, `::test_audit_purge_command`.
-
-## 8. Should inventory ledger entries be editable after the fact?
-
-- **Assumption:** No — ledger is append-only to keep reconciliation possible. Corrections happen via offsetting entries (e.g. a stocktake "stocktake" entry), never in-place edits.
-- **Solution:** `StockLedger` model silently rejects `update()` and `delete()`. Test: `InventoryTest::test_stock_ledger_is_immutable`.
-
-## 9. How should two reservation strategies behave when stock runs out?
-
-- **Assumption:** Two strategies per `ServiceOrder`: `lock_at_creation` reserves stock immediately (failing fast if unavailable) and decrements ATP; `deduct_at_close` only decrements on-hand on close. The close operation converts reservations to deductions atomically.
-- **Solution:** `InventoryService::reserveForOrder` and `closeOrderReservations`. Insufficient-stock returns `422`. Tests: `ServiceOrderTest::test_can_create_order_with_lock_at_creation_strategy`, `::test_reservation_fails_when_insufficient_stock`.
-
-## 10. Is image upload limited per review, and by how much?
-
-- **Assumption:** 5 images maximum per review submission, capped at `VETOPS_UPLOAD_MAX_MB` each (20 MB default).
-- **Solution:** Validated at the controller level: `images` array max 5, each `image|max:20480` (kilobytes). Test: `ReviewTest` covers rating bounds and review submission validation limits.
-
-## 11. How is overdue status detected — at request time or in the background?
-
-- **Assumption:** Both. The `RentalTransaction::isOverdue()` method computes it dynamically for any caller; a scheduled `vetops:mark-overdue-rentals` command promotes `active` → `overdue` status, primarily so lists and dashboards filter correctly without computing on every row.
-- **Solution:** Threshold is `VETOPS_OVERDUE_HOURS` (2 hours after `expected_return_at`). Tests: `RentalTransactionTest::test_overdue_detection_works`, `::test_mark_overdue_command_updates_status`, `RentalPricingTest::test_overdue_detection_2_hours_threshold`.
-
-## 12. How is the login rate limit split across captcha vs lockout?
-
-- **Assumption:** A CAPTCHA challenge is shown after 5 failures (`VETOPS_CAPTCHA_AFTER`); the account/IP is fully locked out after 10 failures (`VETOPS_MAX_LOGIN_ATTEMPTS`) within the 10-minute rolling window (`VETOPS_LOGIN_WINDOW_MINUTES`). Route also carries a Laravel `throttle:10,10` middleware as a second line of defence.
-- **Solution:** `AuthService::attempt` counts `LoginAttempt` rows for the IP over the window, returning `captcha_required` in the response once the CAPTCHA threshold is crossed and hard-failing once the max is crossed. Tests: `AuthTest::test_login_blocked_after_max_attempts`, `::test_captcha_required_after_threshold_failures`, `::test_login_response_contains_captcha_flag_after_threshold`.
+Q8. Security Tests Assert Broad Status Set, Reducing Defect Detection Strength
+Question: `SecurityTest::test_inactive_user_cannot_access_api` used `$this->assertContains([200, 401, 403], ...)` (or equivalent broad assertions). Why does this weaken the test, and what additional production fix is required?
+My understanding: Asserting that the status is "one of several acceptable values" means the test passes even when an inactive user receives a `200 OK` — i.e., gets full API access. The test was written defensively to avoid brittleness, but it accidentally allowed the actual security regression (inactive users with valid tokens can access the API) to go undetected.
+Solution: Tighten the assertion to `$this->assertNotEquals(200, $response->status())` to ensure inactive users are definitely not getting data back. Additionally, fix the underlying security gap: create an `EnsureUserIsActive` middleware that checks `$user->active === false` and returns `403` with `{'message': 'Account is disabled.'}`. Register this middleware in the API group in `bootstrap/app.php` (appended after `EnsureFrontendRequestsAreStateful`) so it runs on every authenticated API request.
