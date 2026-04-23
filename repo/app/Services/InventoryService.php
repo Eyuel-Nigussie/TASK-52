@@ -213,12 +213,25 @@ class InventoryService
 
     public function closeStocktake(StocktakeSession $session, int $closedBy): StocktakeSession
     {
+        if ($session->status === 'approved') {
+            return $this->applyStocktake($session, $closedBy);
+        }
+
         if ($session->hasPendingApprovals()) {
             $session->update(['status' => 'pending_approval']);
             return $session->refresh();
         }
 
         return $this->applyStocktake($session, $closedBy);
+    }
+
+    public function approveSession(StocktakeSession $session, int $approvedBy): StocktakeSession
+    {
+        $session->update([
+            'status'      => 'approved',
+            'approved_by' => $approvedBy,
+        ]);
+        return $session->refresh();
     }
 
     public function approveStocktakeEntry(
@@ -305,17 +318,19 @@ class InventoryService
             foreach ($order->reservations()->where('status', 'reserved')->get() as $reservation) {
                 $level = $this->getOrCreateLevel($reservation->item_id, $reservation->storeroom_id);
 
-                if ($order->reservation_strategy === 'deduct_at_close') {
-                    $this->issue(
-                        InventoryItem::find($reservation->item_id),
-                        Storeroom::find($reservation->storeroom_id),
-                        (float) $reservation->quantity_reserved,
-                        $order->created_by ?? 0,
-                        ServiceOrder::class,
-                        $order->id,
-                        "Auto-deduct on order close"
-                    );
-                }
+                // Both strategies consume on_hand at close: deduct_at_close was
+                // optimistic (never touched on_hand at creation); lock_at_creation
+                // locked ATP by incrementing reserved but never reduced on_hand —
+                // the actual physical deduction happens here in both cases.
+                $this->issue(
+                    InventoryItem::find($reservation->item_id),
+                    Storeroom::find($reservation->storeroom_id),
+                    (float) $reservation->quantity_reserved,
+                    $order->created_by ?? 0,
+                    ServiceOrder::class,
+                    $order->id,
+                    "Auto-deduct on order close"
+                );
 
                 $level->decrement('reserved', (float) $reservation->quantity_reserved);
                 $level->recalculateAtp();

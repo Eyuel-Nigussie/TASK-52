@@ -253,22 +253,29 @@ class StocktakeTest extends TestCase
             'started_at'   => now(),
         ]);
 
-        // Add entry with high variance and approve it
+        // Add entry with high variance (not yet approved).
         $entryResp = $this->postJson("/api/stocktake/{$session->id}/entries", [
             'item_id'          => $item->id,
             'counted_quantity' => 80,
         ]);
         $entryId = $entryResp->json('id');
+
+        // Close before approving — stops at pending_approval.
+        $this->postJson("/api/stocktake/{$session->id}/close")
+            ->assertStatus(200)->assertJsonPath('status', 'pending_approval');
+
+        // Approve the individual variance entry.
         $this->postJson("/api/stocktake/{$session->id}/entries/{$entryId}/approve", [
             'reason' => 'Confirmed via physical walkthrough',
-        ]);
+        ])->assertStatus(200);
 
-        // Close the session
-        $this->postJson("/api/stocktake/{$session->id}/close");
+        // Manager approves the session — transitions to 'approved'.
+        $this->postJson("/api/stocktake/{$session->id}/approve")
+            ->assertStatus(200)->assertJsonPath('status', 'approved');
 
-        // Approve and apply the session (status transitions to closed after stock adjustments)
-        $response = $this->postJson("/api/stocktake/{$session->id}/approve");
-        $response->assertStatus(200)->assertJsonPath('status', 'closed');
+        // Final close applies the adjustments and transitions to 'closed'.
+        $this->postJson("/api/stocktake/{$session->id}/close")
+            ->assertStatus(200)->assertJsonPath('status', 'closed');
     }
 
     public function test_session_goes_to_pending_approval_when_variance_entries_exist(): void

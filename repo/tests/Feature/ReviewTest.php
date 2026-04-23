@@ -10,6 +10,7 @@ use App\Models\Patient;
 use App\Models\Visit;
 use App\Models\VisitReview;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class ReviewTest extends TestCase
@@ -23,19 +24,22 @@ class ReviewTest extends TestCase
         $patient = Patient::factory()->create(['facility_id' => $facility->id]);
 
         return Visit::factory()->create([
-            'facility_id' => $facility->id,
-            'doctor_id'   => $doctor->id,
-            'patient_id'  => $patient->id,
-            'status'      => 'completed',
+            'facility_id'  => $facility->id,
+            'doctor_id'    => $doctor->id,
+            'patient_id'   => $patient->id,
+            'status'       => 'completed',
+            'review_token' => (string) Str::uuid(),
         ]);
     }
 
     public function test_can_submit_review_for_completed_visit(): void
     {
-        $tech = $this->actingAsTechnicianDoctor();
+        $tech  = $this->actingAsTechnicianDoctor();
         $visit = $this->createCompletedVisit($tech->facility_id);
+        $token = $visit->getAttributes()['review_token'];
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token'      => $token,
             'rating'            => 5,
             'body'              => 'Excellent care for our pet.',
             'tags'              => ['professional', 'caring'],
@@ -47,10 +51,10 @@ class ReviewTest extends TestCase
 
     public function test_cannot_submit_review_for_non_completed_visit(): void
     {
-        $tech = $this->actingAsTechnicianDoctor();
+        $tech     = $this->actingAsTechnicianDoctor();
         $facility = Facility::findOrFail($tech->facility_id);
-        $doctor = Doctor::factory()->create(['facility_id' => $facility->id]);
-        $patient = Patient::factory()->create(['facility_id' => $facility->id]);
+        $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
+        $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
 
         $visit = Visit::factory()->create([
             'facility_id' => $facility->id,
@@ -59,25 +63,35 @@ class ReviewTest extends TestCase
             'status'      => 'scheduled',
         ]);
 
+        // Scheduled visits have no review_token — any token value returns 403.
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token'      => 'not-a-real-token',
             'rating'            => 4,
             'submitted_by_name' => 'Owner',
         ]);
 
-        $response->assertStatus(422);
+        $response->assertStatus(403);
     }
 
     public function test_cannot_submit_duplicate_review(): void
     {
-        $tech = $this->actingAsTechnicianDoctor();
+        $tech  = $this->actingAsTechnicianDoctor();
         $visit = $this->createCompletedVisit($tech->facility_id);
+        $token = $visit->getAttributes()['review_token'];
 
+        // First submission consumes the token.
         $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token'      => $token,
             'rating'            => 4,
             'submitted_by_name' => 'Owner',
-        ]);
+        ])->assertStatus(201);
+
+        // Issue a fresh token so the duplicate-review check (not token check) fires.
+        $fresh = (string) Str::uuid();
+        $visit->update(['review_token' => $fresh]);
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token'      => $fresh,
             'rating'            => 3,
             'submitted_by_name' => 'Owner',
         ]);
@@ -157,10 +171,12 @@ class ReviewTest extends TestCase
 
     public function test_rating_must_be_between_1_and_5(): void
     {
-        $tech = $this->actingAsTechnicianDoctor();
+        $tech  = $this->actingAsTechnicianDoctor();
         $visit = $this->createCompletedVisit($tech->facility_id);
+        $token = $visit->getAttributes()['review_token'];
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token'      => $token,
             'rating'            => 6,
             'submitted_by_name' => 'Owner',
         ]);

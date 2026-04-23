@@ -36,11 +36,14 @@ class ReviewController extends Controller
 
     /**
      * Public endpoint — declared outside the auth group in routes/api.php.
-     * Scoped by visit id and rate-limited. No authenticated user is expected.
+     * Scoped by visit id + one-time review_token. No authenticated user is expected.
+     * The token is generated when the visit is marked completed and is consumed
+     * (nullified) on first use so replay is impossible.
      */
     public function submit(Request $request, Visit $visit): JsonResponse
     {
         $data = $request->validate([
+            'review_token'       => 'required|string',
             'rating'             => 'required|integer|min:1|max:5',
             'body'               => 'nullable|string|max:5000',
             'tags'               => 'nullable|array',
@@ -48,6 +51,13 @@ class ReviewController extends Controller
             'images'             => 'nullable|array|max:5',
             'images.*'           => 'image|max:' . (config('vetops.upload_max_mb', 20) * 1024),
         ]);
+
+        if (!$visit->review_token || !hash_equals($visit->review_token, $data['review_token'])) {
+            abort(403, 'Invalid or already-used review token.');
+        }
+
+        // Consume the token so it cannot be replayed.
+        $visit->update(['review_token' => null]);
 
         $review = $this->reviewService->submit(
             visit: $visit,

@@ -114,7 +114,9 @@ class StocktakeController extends Controller
             return response()->json(['message' => 'All variance entries must be individually approved first.'], 422);
         }
 
-        $session = $this->inventoryService->applyStocktake($stocktakeSession, $request->user()->id);
+        // Transition to 'approved'. A subsequent close() call will apply the
+        // stocktake adjustments and move the session to 'closed'.
+        $session = $this->inventoryService->approveSession($stocktakeSession, $request->user()->id);
         return response()->json($session);
     }
 }

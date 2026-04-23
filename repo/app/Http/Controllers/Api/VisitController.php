@@ -13,6 +13,7 @@ use App\Models\Visit;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class VisitController extends Controller
@@ -85,10 +86,21 @@ class VisitController extends Controller
             }
         }
 
+        if (($data['status'] ?? null) === 'completed') {
+            $data['review_token'] = (string) Str::uuid();
+        }
+
         $visit = Visit::create($data);
         $this->audit->logModel('visit.create', $visit);
 
-        return response()->json($visit->load(['patient', 'doctor']), 201);
+        $response = $visit->load(['patient', 'doctor']);
+        // Surface the token once on creation so staff can hand it to the pet owner.
+        if ($visit->review_token) {
+            $response = array_merge($response->toArray(), ['review_token' => $visit->review_token]);
+            return response()->json($response, 201);
+        }
+
+        return response()->json($response, 201);
     }
 
     public function show(Visit $visit): JsonResponse
@@ -110,9 +122,21 @@ class VisitController extends Controller
         ]);
 
         $old = $visit->toArray();
-        $visit->update($data);
-        $this->audit->logModel('visit.update', $visit, $old, $visit->fresh()->toArray());
 
-        return response()->json($visit->fresh());
+        // Generate a one-time review token when the visit first becomes completed.
+        if (isset($data['status']) && $data['status'] === 'completed' && $visit->status !== 'completed') {
+            $data['review_token'] = (string) Str::uuid();
+        }
+
+        $visit->update($data);
+        $fresh = $visit->fresh();
+        $this->audit->logModel('visit.update', $visit, $old, $fresh->toArray());
+
+        // Surface the token once so staff can copy it to the tablet URL.
+        if (isset($data['review_token'])) {
+            return response()->json(array_merge($fresh->toArray(), ['review_token' => $fresh->review_token]));
+        }
+
+        return response()->json($fresh);
     }
 }

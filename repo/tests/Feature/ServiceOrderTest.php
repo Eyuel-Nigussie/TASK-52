@@ -235,4 +235,36 @@ class ServiceOrderTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonPath('total', 2);
     }
+
+    public function test_lock_at_creation_deducts_on_hand_when_order_is_closed(): void
+    {
+        $tech = $this->actingAsTechnicianDoctor();
+        [$item, $storeroom] = $this->setupStockLevel(50.0, $tech->facility_id);
+
+        // Create order — stock is reserved but on_hand is not yet touched.
+        $createResp = $this->postJson('/api/service-orders', [
+            'facility_id'          => $tech->facility_id,
+            'reservation_strategy' => 'lock_at_creation',
+            'items'                => [
+                [
+                    'item_id'      => $item->id,
+                    'storeroom_id' => $storeroom->id,
+                    'quantity'     => 10,
+                ],
+            ],
+        ]);
+        $createResp->assertStatus(201);
+        $orderId = $createResp->json('id');
+
+        $level = StockLevel::where('item_id', $item->id)->first();
+        $this->assertEquals(50.0, (float) $level->on_hand, 'on_hand must not change at reservation time');
+        $this->assertEquals(10.0, (float) $level->reserved);
+
+        // Close the order — on_hand must be reduced.
+        $this->postJson("/api/service-orders/{$orderId}/close")->assertStatus(200);
+
+        $level->refresh();
+        $this->assertEquals(40.0, (float) $level->on_hand, 'on_hand must be deducted on close');
+        $this->assertEquals(0.0, (float) $level->reserved, 'reserved must be released on close');
+    }
 }

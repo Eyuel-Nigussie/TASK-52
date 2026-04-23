@@ -150,10 +150,10 @@ Route::middleware(['auth:sanctum', 'vetops.inactivity'])->group(function () {
     // Service Orders
     Route::prefix('service-orders')->group(function () {
         Route::get('/', [ServiceOrderController::class, 'index']);
-        Route::post('/', [ServiceOrderController::class, 'store']);
+        Route::post('/', [ServiceOrderController::class, 'store'])->middleware('role:technician_doctor,clinic_manager,system_admin');
         Route::get('/{serviceOrder}', [ServiceOrderController::class, 'show']);
         Route::post('/{serviceOrder}/close', [ServiceOrderController::class, 'close'])->middleware('role:technician_doctor,clinic_manager,system_admin');
-        Route::post('/{serviceOrder}/reservations', [ServiceOrderController::class, 'addReservation']);
+        Route::post('/{serviceOrder}/reservations', [ServiceOrderController::class, 'addReservation'])->middleware('role:technician_doctor,clinic_manager,system_admin');
     });
 
     // Content
@@ -185,18 +185,18 @@ Route::middleware(['auth:sanctum', 'vetops.inactivity'])->group(function () {
     // Patients
     Route::prefix('patients')->group(function () {
         Route::get('/', [PatientController::class, 'index']);
-        Route::post('/', [PatientController::class, 'store']);
+        Route::post('/', [PatientController::class, 'store'])->middleware('role:technician_doctor,clinic_manager,system_admin');
         Route::get('/{patient}', [PatientController::class, 'show']);
-        Route::put('/{patient}', [PatientController::class, 'update']);
+        Route::put('/{patient}', [PatientController::class, 'update'])->middleware('role:technician_doctor,clinic_manager,system_admin');
         Route::delete('/{patient}', [PatientController::class, 'destroy'])->middleware('role:system_admin,clinic_manager');
     });
 
     // Visits
     Route::prefix('visits')->group(function () {
         Route::get('/', [VisitController::class, 'index']);
-        Route::post('/', [VisitController::class, 'store']);
+        Route::post('/', [VisitController::class, 'store'])->middleware('role:technician_doctor,clinic_manager,system_admin');
         Route::get('/{visit}', [VisitController::class, 'show']);
-        Route::put('/{visit}', [VisitController::class, 'update']);
+        Route::put('/{visit}', [VisitController::class, 'update'])->middleware('role:technician_doctor,clinic_manager,system_admin');
     });
 
     // Reviews (submit is public — declared above the auth group)

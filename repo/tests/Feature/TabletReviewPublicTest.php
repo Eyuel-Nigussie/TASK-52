@@ -29,20 +29,23 @@ class TabletReviewPublicTest extends TestCase
         $patient = Patient::factory()->create(['facility_id' => $facility->id]);
 
         return Visit::factory()->create([
-            'facility_id' => $facility->id,
-            'doctor_id'   => $doctor->id,
-            'patient_id'  => $patient->id,
-            'status'      => 'completed',
+            'facility_id'  => $facility->id,
+            'doctor_id'    => $doctor->id,
+            'patient_id'   => $patient->id,
+            'status'       => 'completed',
+            'review_token' => (string) \Illuminate\Support\Str::uuid(),
         ]);
     }
 
     public function test_unauthenticated_owner_can_submit_review(): void
     {
         $visit = $this->completedVisit();
+        $token = $visit->getRawOriginal('review_token') ?? $visit->getAttributes()['review_token'];
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
-            'rating' => 5,
-            'body'   => 'Kind and professional visit.',
+            'review_token' => $token,
+            'rating'       => 5,
+            'body'         => 'Kind and professional visit.',
         ]);
 
         $response->assertStatus(201)->assertJsonPath('rating', 5);
@@ -51,9 +54,11 @@ class TabletReviewPublicTest extends TestCase
     public function test_submitted_by_name_is_optional(): void
     {
         $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
-            'rating' => 4,
+            'review_token' => $token,
+            'rating'       => 4,
         ]);
 
         $response->assertStatus(201);
@@ -68,6 +73,7 @@ class TabletReviewPublicTest extends TestCase
     {
         Storage::fake();
         $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
 
         $files = [
             UploadedFile::fake()->image('a.jpg'),
@@ -78,8 +84,9 @@ class TabletReviewPublicTest extends TestCase
         ];
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
-            'rating' => 5,
-            'images' => $files,
+            'review_token' => $token,
+            'rating'       => 5,
+            'images'       => $files,
         ]);
 
         $response->assertStatus(201);
@@ -90,6 +97,7 @@ class TabletReviewPublicTest extends TestCase
     {
         Storage::fake();
         $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
 
         $files = [];
         for ($i = 0; $i < 6; $i++) {
@@ -97,8 +105,9 @@ class TabletReviewPublicTest extends TestCase
         }
 
         $response = $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
-            'rating' => 5,
-            'images' => $files,
+            'review_token' => $token,
+            'rating'       => 5,
+            'images'       => $files,
         ]);
 
         $response->assertStatus(422)->assertJsonValidationErrors(['images']);
@@ -107,27 +116,58 @@ class TabletReviewPublicTest extends TestCase
     public function test_rating_outside_1_to_5_is_rejected(): void
     {
         $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
 
-        $this->postJson("/api/reviews/visits/{$visit->id}/submit", ['rating' => 0])
+        $this->postJson("/api/reviews/visits/{$visit->id}/submit", ['review_token' => $token, 'rating' => 0])
             ->assertStatus(422);
 
-        $this->postJson("/api/reviews/visits/{$visit->id}/submit", ['rating' => 6])
+        // Token was not consumed (validation rejected before token check reaches pass), create a new visit for 2nd assertion
+        $visit2 = $this->completedVisit();
+        $token2 = $visit2->getAttributes()['review_token'];
+        $this->postJson("/api/reviews/visits/{$visit2->id}/submit", ['review_token' => $token2, 'rating' => 6])
             ->assertStatus(422);
     }
 
     public function test_submit_for_nonexistent_visit_404s(): void
     {
-        $this->postJson('/api/reviews/visits/999999/submit', ['rating' => 5])
+        $this->postJson('/api/reviews/visits/999999/submit', ['review_token' => 'any', 'rating' => 5])
             ->assertStatus(404);
+    }
+
+    public function test_submit_with_invalid_token_is_rejected(): void
+    {
+        $visit = $this->completedVisit();
+
+        $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token' => 'wrong-token-value',
+            'rating'       => 5,
+        ])->assertStatus(403);
+    }
+
+    public function test_token_is_consumed_after_first_use(): void
+    {
+        $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
+
+        $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token' => $token,
+            'rating'       => 5,
+        ])->assertStatus(201);
+
+        // Second attempt with the same token must fail — token was nullified.
+        $this->postJson("/api/reviews/visits/{$visit->id}/submit", [
+            'review_token' => $token,
+            'rating'       => 4,
+        ])->assertStatus(403);
     }
 
     public function test_route_is_reachable_without_any_bearer_token(): void
     {
-        // Belt-and-braces check: even if upstream middleware were changed,
-        // this asserts we never return 401 on this route.
         $visit = $this->completedVisit();
+        $token = $visit->getAttributes()['review_token'];
         $response = $this->withHeaders([])->postJson("/api/reviews/visits/{$visit->id}/submit", [
-            'rating' => 5,
+            'review_token' => $token,
+            'rating'       => 5,
         ]);
 
         $this->assertNotSame(401, $response->status(), 'Route must remain public; got 401.');

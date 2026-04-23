@@ -15,8 +15,10 @@ class Visit extends Model
 
     protected $fillable = [
         'facility_id', 'patient_id', 'doctor_id', 'service_order_id',
-        'visit_date', 'status',
+        'visit_date', 'status', 'review_token',
     ];
+
+    protected $hidden = ['review_token'];
 
     protected function casts(): array
     {

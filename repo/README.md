@@ -65,8 +65,6 @@ The helper script `./start.sh` wraps the same `docker-compose up` with pre-fligh
 
 The portal will be available at **http://localhost:8000** (both the Vue SPA and the REST API are served from this origin).
 
-For on-premise provisioning, air-gapped builds, encryption-key handling, backup/restore drills, scheduled jobs, and incident response procedures, see [`OPERATIONS.md`](OPERATIONS.md). For the full RBAC matrix and policy map, see [`docs/RBAC.md`](docs/RBAC.md).
-
 Run the full test suite (no MySQL required — uses SQLite in-memory):
 
 ```bash
