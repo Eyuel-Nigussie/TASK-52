@@ -267,4 +267,36 @@ class ServiceOrderTest extends TestCase
         $this->assertEquals(40.0, (float) $level->on_hand, 'on_hand must be deducted on close');
         $this->assertEquals(0.0, (float) $level->reserved, 'reserved must be released on close');
     }
+
+    public function test_deduct_at_close_deducts_on_hand_only_when_order_is_closed(): void
+    {
+        $tech = $this->actingAsTechnicianDoctor();
+        [$item, $storeroom] = $this->setupStockLevel(30.0, $tech->facility_id);
+
+        // Create order — neither on_hand nor reserved should change for deduct_at_close.
+        $createResp = $this->postJson('/api/service-orders', [
+            'facility_id'          => $tech->facility_id,
+            'reservation_strategy' => 'deduct_at_close',
+            'items'                => [
+                [
+                    'item_id'      => $item->id,
+                    'storeroom_id' => $storeroom->id,
+                    'quantity'     => 7,
+                ],
+            ],
+        ]);
+        $createResp->assertStatus(201);
+        $orderId = $createResp->json('id');
+
+        $level = StockLevel::where('item_id', $item->id)->first();
+        $this->assertEquals(30.0, (float) $level->on_hand, 'on_hand must not change at record time');
+        $this->assertEquals(0.0, (float) $level->reserved, 'reserved must not change for deduct_at_close');
+
+        // Close the order — on_hand must be reduced; reserved stays 0.
+        $this->postJson("/api/service-orders/{$orderId}/close")->assertStatus(200);
+
+        $level->refresh();
+        $this->assertEquals(23.0, (float) $level->on_hand, 'on_hand must be deducted on close');
+        $this->assertEquals(0.0, (float) $level->reserved, 'reserved must remain 0 for deduct_at_close');
+    }
 }

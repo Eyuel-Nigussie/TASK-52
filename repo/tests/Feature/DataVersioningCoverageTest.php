@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\DataVersion;
+use App\Models\Department;
 use App\Models\Doctor;
 use App\Models\Facility;
 use App\Models\InventoryItem;
 use App\Models\Patient;
 use App\Models\RentalAsset;
+use App\Models\Storeroom;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -93,6 +96,71 @@ class DataVersioningCoverageTest extends TestCase
 
         $this->putJson("/api/inventory/items/{$itemId}", ['category' => 'sterile'])->assertStatus(200);
         $this->assertEquals(2, DataVersion::where('entity_type', InventoryItem::class)->where('entity_id', $itemId)->count());
+    }
+
+    public function test_department_update_is_versioned(): void
+    {
+        $this->actingAsAdmin();
+        $facility = Facility::factory()->create();
+
+        $resp = $this->postJson('/api/departments', [
+            'facility_id'  => $facility->id,
+            'external_key' => 'DEPT-V1',
+            'name'         => 'Cardiology',
+        ])->assertStatus(201);
+
+        $deptId = $resp->json('id');
+
+        $this->putJson("/api/departments/{$deptId}", ['name' => 'Neurology'])->assertStatus(200);
+        $this->assertEquals(
+            1,
+            DataVersion::where('entity_type', Department::class)->where('entity_id', $deptId)->count(),
+            'update must create a DataVersion snapshot'
+        );
+    }
+
+    public function test_storeroom_update_is_versioned(): void
+    {
+        $this->actingAsAdmin();
+        $facility = Facility::factory()->create();
+
+        $resp = $this->postJson('/api/storerooms', [
+            'facility_id' => $facility->id,
+            'name'        => 'Room A',
+        ])->assertStatus(201);
+
+        $storeroomId = $resp->json('id');
+
+        $this->putJson("/api/storerooms/{$storeroomId}", ['name' => 'Room B'])->assertStatus(200);
+        $this->assertEquals(
+            1,
+            DataVersion::where('entity_type', Storeroom::class)->where('entity_id', $storeroomId)->count(),
+            'update must create a DataVersion snapshot'
+        );
+    }
+
+    public function test_user_update_is_versioned(): void
+    {
+        $this->actingAsAdmin();
+        $facility = Facility::factory()->create();
+
+        $resp = $this->postJson('/api/users', [
+            'username'              => 'ver_user',
+            'name'                  => 'Version Test',
+            'password'              => 'P@ssword123!',
+            'password_confirmation' => 'P@ssword123!',
+            'role'                  => 'inventory_clerk',
+            'facility_id'           => $facility->id,
+        ])->assertStatus(201);
+
+        $userId = $resp->json('id');
+
+        $this->putJson("/api/users/{$userId}", ['name' => 'Updated Name'])->assertStatus(200);
+        $this->assertEquals(
+            1,
+            DataVersion::where('entity_type', User::class)->where('entity_id', $userId)->count(),
+            'update must create a DataVersion snapshot'
+        );
     }
 
     public function test_data_version_can_revert_entity(): void

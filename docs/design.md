@@ -133,7 +133,7 @@ The `vetops.inactivity` middleware (applied to all protected routes) tracks the 
 
 ### 4.6 Role-Based Access Control
 
-See `docs/RBAC.md` for the full RBAC design. In summary:
+In summary:
 
 - Each user has exactly one `role` and an optional `facility_id`.
 - Enforcement is four-layered:
