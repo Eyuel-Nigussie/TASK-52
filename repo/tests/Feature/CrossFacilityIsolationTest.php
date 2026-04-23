@@ -19,7 +19,7 @@ use Tests\TestCase;
 /**
  * Tenant-isolation regression suite. A manager/clerk/tech bound to facility A
  * must not be able to read or mutate facility B's records by guessing an id.
- * `system_admin` retains cross-facility access by design (§RBAC.md).
+ * `system_admin` retains cross-facility access by design (enforced via ScopesByFacility trait).
  */
 class CrossFacilityIsolationTest extends TestCase
 {

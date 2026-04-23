@@ -56,6 +56,7 @@ class StoreroomController extends Controller
 
         $storeroom = Storeroom::create($data);
         $this->audit->logModel('storeroom.create', $storeroom);
+        $this->versioning->record($storeroom, [], $request->user()->id, 'Created via API');
 
         return response()->json($storeroom, 201);
     }

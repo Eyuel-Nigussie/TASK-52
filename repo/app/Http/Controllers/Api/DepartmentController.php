@@ -59,6 +59,7 @@ class DepartmentController extends Controller
 
         $dept = Department::create($data);
         $this->audit->logModel('department.create', $dept);
+        $this->versioning->record($dept, [], $request->user()->id, 'Created via API');
 
         return response()->json($dept, 201);
     }

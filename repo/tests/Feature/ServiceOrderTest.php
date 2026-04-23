@@ -299,4 +299,26 @@ class ServiceOrderTest extends TestCase
         $this->assertEquals(23.0, (float) $level->on_hand, 'on_hand must be deducted on close');
         $this->assertEquals(0.0, (float) $level->reserved, 'reserved must remain 0 for deduct_at_close');
     }
+
+    public function test_add_reservation_on_deduct_at_close_order_does_not_lock_atp(): void
+    {
+        $tech = $this->actingAsTechnicianDoctor();
+        [$item, $storeroom] = $this->setupStockLevel(50.0, $tech->facility_id);
+
+        $order = $this->postJson('/api/service-orders', [
+            'facility_id'          => $tech->facility_id,
+            'reservation_strategy' => 'deduct_at_close',
+        ])->assertStatus(201)->json();
+
+        $this->postJson("/api/service-orders/{$order['id']}/reservations", [
+            'item_id'      => $item->id,
+            'storeroom_id' => $storeroom->id,
+            'quantity'     => 15,
+        ])->assertStatus(201);
+
+        $level = StockLevel::where('item_id', $item->id)->first();
+        $this->assertEquals(50.0, (float) $level->on_hand, 'on_hand must not change for deduct_at_close addReservation');
+        $this->assertEquals(0.0, (float) $level->reserved, 'reserved must not be locked for deduct_at_close');
+        $this->assertEquals(50.0, (float) $level->available_to_promise, 'ATP must remain unchanged for deduct_at_close');
+    }
 }

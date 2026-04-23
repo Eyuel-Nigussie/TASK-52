@@ -61,6 +61,7 @@ class UserController extends Controller
         $data['password_changed_at'] = now();
         $user = User::create($data);
         $this->audit->logModel('user.create', $user, null, ['username' => $user->username, 'role' => $user->role]);
+        $this->versioning->record($user, [], $request->user()->id, 'Created via API');
 
         return response()->json($user, 201);
     }

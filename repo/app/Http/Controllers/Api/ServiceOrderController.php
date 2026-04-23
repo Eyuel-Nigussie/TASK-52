@@ -147,12 +147,15 @@ class ServiceOrderController extends Controller
             'quantity'     => 'required|numeric|min:0.001',
         ]);
 
-        $reservation = $this->inventoryService->reserveForOrder(
-            $serviceOrder,
-            InventoryItem::findOrFail($data['item_id']),
-            Storeroom::findOrFail($data['storeroom_id']),
-            (float) $data['quantity'],
-        );
+        $item      = InventoryItem::findOrFail($data['item_id']);
+        $storeroom = Storeroom::findOrFail($data['storeroom_id']);
+        $qty       = (float) $data['quantity'];
+
+        if ($serviceOrder->reservation_strategy === 'lock_at_creation') {
+            $reservation = $this->inventoryService->reserveForOrder($serviceOrder, $item, $storeroom, $qty);
+        } else {
+            $reservation = $this->inventoryService->recordForClose($serviceOrder, $item, $storeroom, $qty);
+        }
 
         $this->audit->logModel('service_order.reserve', $reservation);
 
