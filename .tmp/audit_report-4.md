@@ -1,179 +1,214 @@
-# VetOps Delivery Acceptance + Project Architecture Static Audit (Fresh Re-check)
+# VetOps Unified Operations Portal - Delivery Acceptance and Project Architecture Audit (Static-Only)
 
 ## 1. Verdict
 - Overall conclusion: **Pass**
 
 ## 2. Scope and Static Verification Boundary
-- Reviewed (static only): docs/config, route registration, middleware/auth flow, controllers/services/policies/models/migrations, frontend API client, and test suites.
-- Not reviewed: runtime LAN behavior, Docker/runtime orchestration behavior, scanner hardware behavior, browser-rendered UX quality, scheduler/queue production execution, load/performance behavior.
-- Intentionally not executed: startup, Docker, migrations, tests, browser/manual flows.
-- Manual verification required for: scanner/tablet UX on real devices, deployed CSRF/cookie behavior under real proxy/TLS topology, and responsive UI visual quality.
+- What was reviewed:
+  - Documentation and static config (`repo/README.md`, `docs/design.md`, `.env/.env.example`, `docker-compose.yml`)
+  - API routes, middleware, policies, controllers, services, models, and migrations
+  - Vue router/views/API client and related frontend tests
+  - Backend test suites/configuration (`tests/Feature`, `tests/Unit`, `phpunit.xml`)
+- What was not reviewed:
+  - Live runtime behavior (browser rendering, container runtime, scanner hardware IO, scheduler execution in deployed env)
+- What was intentionally not executed:
+  - Project startup, Docker, tests, external services
+- Which claims require manual verification:
+  - Browser-level visual quality and interaction polish
+  - Final deployment network controls in the target LAN/host environment
 
 ## 3. Repository / Requirement Mapping Summary
-- Prompt core domains are implemented: rentals, inventory/stock ledger/stocktake, content workflow/versioning, and visit-review moderation/dashboard.
-- Security/constraint mapping reviewed: password length, login throttle/CAPTCHA/inactivity, RBAC + tenant isolation, masking/encryption, audit trails, checksum integrity, CSV idempotency/versioning.
-- Main reviewed surfaces: `repo/routes/api.php`, `repo/app/Http/Controllers/Api/*`, `repo/app/Services/*`, `repo/app/Policies/*`, `repo/app/Models/*`, `repo/database/migrations/*`, `repo/resources/js/api/client.js`, `repo/tests/Feature/*`, `repo/tests/Unit/*`, `repo/README.md`.
+- Prompt core goal mapped:
+  - On-prem multi-location vet operations platform with rentals, inventory, internal content publishing, and post-visit reviews.
+- Main implementation areas mapped:
+  - Auth/RBAC/session/tenant isolation: `repo/routes/api.php`, `repo/app/Services/AuthService.php`, `repo/app/Policies/*`, `repo/app/Http/Controllers/Concerns/ScopesByFacility.php`
+  - Domain logic: `repo/app/Services/{RentalService,InventoryService,ContentService,ReviewService,ImportService,DeduplicationService}.php`
+  - Audit/versioning/history: `repo/app/Services/{AuditService,DataVersioningService}.php`, `repo/app/Http/Controllers/Api/*Controller.php`
+  - Frontend role workspaces and flows: `repo/resources/js/views/*.vue`, `repo/resources/js/router/index.js`
+  - Tests: `repo/tests/Feature/*`, `repo/tests/Unit/*`, `repo/resources/js/**/*.test.js`
 
 ## 4. Section-by-section Review
 
 ### 4.1 Hard Gates
-- **1.1 Documentation and static verifiability**
-- Conclusion: **Pass**
-- Rationale: startup/config/test instructions and architecture surfaces are documented and statically coherent.
-- Evidence: `repo/README.md:50`, `repo/README.md:102`, `repo/README.md:237`, `repo/README.md:265`, `repo/routes/api.php:41`
 
-- **1.2 Material deviation from prompt**
+#### 4.1.1 Documentation and static verifiability
 - Conclusion: **Pass**
-- Rationale: implementation remains centered on the prompt scope; workstation-based throttle semantics are now explicitly implemented and documented.
-- Evidence: `repo/routes/api.php:29`, `repo/app/Providers/AppServiceProvider.php:33`, `repo/app/Services/AuthService.php:25`, `repo/README.md:232`
+- Rationale: Startup/run/test/config instructions are present and internally consistent for static verification.
+- Evidence:
+  - `repo/README.md:56`
+  - `repo/README.md:79`
+  - `repo/start.sh:45`
+  - `repo/run_tests.sh:17`
+
+#### 4.1.2 Material deviation from Prompt
+- Conclusion: **Pass**
+- Rationale: Core prompt domains and constraints are implemented; previously noted strategy mismatch is now corrected.
+- Evidence:
+  - Strategy-aware create path: `repo/app/Http/Controllers/Api/ServiceOrderController.php:102`
+  - Strategy-aware add-reservation path: `repo/app/Http/Controllers/Api/ServiceOrderController.php:154`
+  - `deduct_at_close` ATP non-lock test: `repo/tests/Feature/ServiceOrderTest.php:303`
 
 ### 4.2 Delivery Completeness
-- **2.1 Core functional requirement coverage**
-- Conclusion: **Pass**
-- Rationale: required modules and key guardrails are present, including fixed null-facility isolation paths and service pricing guard.
-- Evidence: `repo/routes/api.php:79`, `repo/routes/api.php:112`, `repo/routes/api.php:159`, `repo/routes/api.php:203`, `repo/app/Http/Controllers/Api/FacilityController.php:35`, `repo/app/Http/Controllers/Api/InventoryController.php:180`, `repo/app/Http/Controllers/Api/ServiceController.php:133`
 
-- **2.2 End-to-end deliverable from 0 to 1**
+#### 4.2.1 Core requirements coverage
 - Conclusion: **Pass**
-- Rationale: complete product-like structure with docs, migrations, services, and broad tests.
-- Evidence: `repo/composer.json:8`, `repo/package.json:5`, `repo/phpunit.xml:7`, `repo/vitest.config.js:12`, `repo/OPERATIONS.md:1`
+- Rationale: Rental, inventory, content workflow, tablet review, dedup/merge, CSV import/export, audit, and security controls are all represented with implementation + tests.
+- Evidence:
+  - API coverage breadth: `repo/routes/api.php:80`, `repo/routes/api.php:111`, `repo/routes/api.php:159`, `repo/routes/api.php:202`, `repo/routes/api.php:216`
+  - Tablet review constraints: `repo/app/Http/Controllers/Api/ReviewController.php:43`, `repo/tests/Feature/TabletReviewPublicTest.php:72`
+  - Strategy behavior tests: `repo/tests/Feature/ServiceOrderTest.php:239`, `repo/tests/Feature/ServiceOrderTest.php:271`, `repo/tests/Feature/ServiceOrderTest.php:303`
+
+#### 4.2.2 End-to-end 0→1 deliverable vs partial/demo
+- Conclusion: **Pass**
+- Rationale: Repository is a complete full-stack product structure with documentation and broad test suites.
+- Evidence:
+  - `repo/README.md:320`
+  - `repo/composer.json:51`
+  - `repo/package.json:8`
 
 ### 4.3 Engineering and Architecture Quality
-- **3.1 Structure and module decomposition**
-- Conclusion: **Pass**
-- Rationale: clear decomposition into controllers/services/policies/models suitable for project scale.
-- Evidence: `repo/app/Services/InventoryService.php:18`, `repo/app/Services/RentalService.php:13`, `repo/app/Services/ReviewService.php:17`, `repo/app/Services/ContentService.php:13`
 
-- **3.2 Maintainability and extensibility**
+#### 4.3.1 Structure and module decomposition
 - Conclusion: **Pass**
-- Rationale: tenant scoping and throttling behavior are centralized and test-backed, reducing prior drift risk.
-- Evidence: `repo/app/Http/Controllers/Concerns/ScopesByFacility.php:24`, `repo/app/Providers/AppServiceProvider.php:36`, `repo/app/Models/LoginAttempt.php:24`, `repo/database/migrations/2026_04_22_000001_add_device_id_to_login_attempts_table.php:14`
+- Rationale: Clear layered decomposition and domain service separation are present.
+- Evidence:
+  - `repo/routes/api.php:41`
+  - `repo/app/Services/InventoryService.php:18`
+  - `repo/app/Providers/AuthServiceProvider.php:48`
+
+#### 4.3.2 Maintainability and extensibility
+- Conclusion: **Pass**
+- Rationale: Versioning/history coverage for mutable entities is now consistent on create+update in previously flagged controllers.
+- Evidence:
+  - Department create/update versioning: `repo/app/Http/Controllers/Api/DepartmentController.php:62`, `repo/app/Http/Controllers/Api/DepartmentController.php:80`
+  - Storeroom create/update versioning: `repo/app/Http/Controllers/Api/StoreroomController.php:59`, `repo/app/Http/Controllers/Api/StoreroomController.php:77`
+  - User create/update versioning: `repo/app/Http/Controllers/Api/UserController.php:64`, `repo/app/Http/Controllers/Api/UserController.php:108`
 
 ### 4.4 Engineering Details and Professionalism
-- **4.1 Error handling, logging, validation, API design**
-- Conclusion: **Pass**
-- Rationale: robust validation, policy checks, and audit logging are present; security assertions were tightened in tests.
-- Evidence: `repo/app/Http/Controllers/Api/StocktakeController.php:94`, `repo/app/Services/AuditService.php:35`, `repo/tests/Feature/SecurityTest.php:153`, `repo/tests/Feature/AuthTest.php:325`
 
-- **4.2 Product-grade organization vs demo**
+#### 4.4.1 Error handling, logging, validation, API detail
 - Conclusion: **Pass**
-- Rationale: operations runbook + maintenance commands + broad regression coverage indicate product-grade delivery.
-- Evidence: `repo/OPERATIONS.md:1`, `repo/docs/RBAC.md:1`, `repo/app/Console/Commands/PurgeOldAuditLogs.php:29`, `repo/app/Console/Commands/VerifyFileChecksums.php:29`
+- Rationale: Strong request validation, policy checks, and structured auditing with redaction are present across critical flows.
+- Evidence:
+  - Validation/authorization examples: `repo/app/Http/Controllers/Api/RentalTransactionController.php:48`, `repo/app/Http/Controllers/Api/ReviewController.php:45`
+  - Audit redaction keys: `repo/app/Services/AuditService.php:20`
+  - Audit redaction tests: `repo/tests/Feature/AuditRedactionTest.php:20`
+
+#### 4.4.2 Product/service organization
+- Conclusion: **Pass**
+- Rationale: The implementation resembles a real product, not a demo, with cross-domain integration and regression tests.
+- Evidence:
+  - `repo/tests/Feature/CrossFacilityIsolationTest.php:24`
+  - `repo/tests/Feature/AuditLogTest.php:16`
 
 ### 4.5 Prompt Understanding and Requirement Fit
-- **5.1 Business goal and constraints fit**
-- Conclusion: **Pass**
-- Rationale: business workflows and major constraints are implemented; previously open workstation throttle gap is now addressed in route limiter + service logic + client contract.
-- Evidence: `repo/app/Providers/AppServiceProvider.php:36`, `repo/app/Services/AuthService.php:27`, `repo/app/Http/Controllers/Api/AuthController.php:27`, `repo/resources/js/api/client.js:28`, `repo/tests/Feature/AuthTest.php:342`
 
-### 4.6 Aesthetics (frontend)
-- **6.1 Visual/interaction quality**
+#### 4.5.1 Business goal and constraints fit
+- Conclusion: **Pass**
+- Rationale: Security, audit, import/idempotency, deduplication, strategy behavior, and on-prem storage constraints are aligned in code.
+- Evidence:
+  - Auth/rate/inactivity: `repo/app/Services/AuthService.php:21`, `repo/app/Providers/AppServiceProvider.php:32`, `repo/app/Http/Middleware/InactivityTimeoutMiddleware.php:34`
+  - File storage/checksum pathing: `repo/app/Services/FileStorageService.php:13`, `repo/app/Console/Commands/VerifyFileChecksums.php:37`
+  - Imports remain private-local while media is public: `repo/app/Services/ImportService.php:33`
+
+### 4.6 Aesthetics (frontend/full-stack)
+
+#### 4.6.1 Visual/interaction quality
 - Conclusion: **Cannot Confirm Statistically**
-- Rationale: static Vue structure is present, but visual quality/responsiveness/interaction polish require browser/device verification.
-- Evidence: `repo/resources/js/views/RentalsView.vue:1`, `repo/resources/js/views/InventoryView.vue:1`, `repo/resources/js/views/ContentView.vue:1`, `repo/resources/js/views/ReviewsView.vue:1`
-- Manual verification note: validate desktop/mobile layout, scanner flow, and tablet review UX in real browser/device runs.
+- Rationale: Static UI structure appears coherent, but visual fidelity and runtime UX quality require browser verification.
+- Evidence:
+  - `repo/resources/js/views/DashboardView.vue:34`
+  - `repo/resources/js/views/RentalsView.vue:182`
+  - `repo/resources/js/views/ReviewsView.vue:102`
+- Manual verification note: Desktop/mobile browser walkthrough.
 
 ## 5. Issues / Suggestions (Severity-Rated)
-
-### Blocker / High
-- **No Blocker/High issue found in this static pass.**
-
-### Medium
-- **No Medium-severity defect found in this static pass.**
-
-### Low
-- Severity: **Low**
-- Title: **Operational logging remains mostly default-channel based**
-- Conclusion: **Partial Fail**
-- Evidence: `repo/config/logging.php:53`, `repo/app/Services/AuditService.php:35`
-- Impact: security/domain events are strong, but broader operational troubleshooting may require deeper app-specific structured logs.
-- Minimum actionable fix: add targeted structured logs for critical background/IO failure paths while preserving redaction standards.
+- **No Blocker/High/Medium material issues remain based on current static evidence.**
+- Low-level suggestion:
+  - Severity: **Low**
+  - Title: Keep comment/doc references synced during future refactors
+  - Conclusion: **Suggestion**
+  - Evidence: Historical drift was corrected (no current stale refs found by static scan)
+  - Impact: Avoids reviewer confusion and improves auditability
+  - Minimum actionable fix: Continue CI/checklist step to validate intra-repo doc references
 
 ## 6. Security Review Summary
-- Authentication entry points
-- Conclusion: **Pass**
-- Evidence: `repo/routes/api.php:27`, `repo/app/Http/Controllers/Api/AuthController.php:19`, `repo/app/Services/AuthService.php:19`, `repo/app/Providers/AppServiceProvider.php:36`
-- Reasoning: password auth, inactivity controls, CAPTCHA flow, and workstation-keyed route limiter are implemented.
-
-- Route-level authorization
-- Conclusion: **Pass**
-- Evidence: `repo/routes/api.php:41`, `repo/routes/api.php:53`, `repo/routes/api.php:71`, `repo/routes/api.php:216`
-- Reasoning: role middleware coverage is broad on privileged and write surfaces.
-
-- Object-level authorization
-- Conclusion: **Pass**
-- Evidence: `repo/app/Policies/FacilityPolicy.php:24`, `repo/app/Policies/DoctorPolicy.php:17`, `repo/app/Policies/VisitReviewPolicy.php:17`, `repo/app/Policies/ServicePricingPolicy.php:21`
-- Reasoning: reviewed policies enforce facility/object boundaries for tenant-scoped entities.
-
-- Function-level authorization
-- Conclusion: **Pass**
-- Evidence: `repo/app/Providers/AuthServiceProvider.php:73`, `repo/app/Providers/AuthServiceProvider.php:80`
-- Reasoning: gate/policy map is complete with centralized admin override.
-
-- Tenant / user data isolation
-- Conclusion: **Pass**
-- Evidence: `repo/app/Http/Controllers/Api/FacilityController.php:35`, `repo/app/Http/Controllers/Api/InventoryController.php:180`, `repo/app/Http/Controllers/Api/StocktakeController.php:30`, `repo/app/Http/Controllers/Api/RentalTransactionController.php:133`, `repo/tests/Feature/NullFacilityDenyTest.php:331`
-- Reasoning: previously reported null-facility fail-open paths now deny or return empty-scoped data.
-
-- Admin / internal / debug protection
-- Conclusion: **Pass**
-- Evidence: `repo/routes/api.php:71`, `repo/routes/api.php:216`, `repo/routes/api.php:228`, `repo/routes/web.php:10`
-- Reasoning: no unprotected debug/admin API routes found in static route map.
+- authentication entry points:
+  - Conclusion: **Pass**
+  - Evidence: `repo/routes/api.php:27`, `repo/app/Http/Controllers/Api/AuthController.php:19`, `repo/app/Services/AuthService.php:21`
+- route-level authorization:
+  - Conclusion: **Pass**
+  - Evidence: `repo/routes/api.php:41`, `repo/routes/api.php:71`, `repo/routes/api.php:216`, `repo/routes/api.php:228`
+- object-level authorization:
+  - Conclusion: **Pass**
+  - Evidence: `repo/app/Http/Controllers/Api/PatientController.php:79`, `repo/app/Http/Controllers/Api/RentalTransactionController.php:117`
+- function-level authorization:
+  - Conclusion: **Pass**
+  - Evidence: `repo/app/Http/Controllers/Api/ContentController.php:143`, `repo/app/Http/Controllers/Api/ReviewController.php:84`
+- tenant / user isolation:
+  - Conclusion: **Pass**
+  - Evidence: `repo/app/Http/Controllers/Concerns/ScopesByFacility.php:22`, `repo/tests/Feature/CrossFacilityIsolationTest.php:67`
+- admin / internal / debug protection:
+  - Conclusion: **Pass**
+  - Evidence: `repo/routes/api.php:216`, `repo/routes/api.php:228`, `repo/docker-compose.yml:48`
 
 ## 7. Tests and Logging Review
-- Unit tests
-- Conclusion: **Pass**
-- Evidence: `repo/phpunit.xml:8`, `repo/tests/Unit/InventoryServiceTest.php:39`, `repo/tests/Unit/StocktakeVarianceTest.php:12`, `repo/tests/Unit/SimHashTest.php:10`
-
-- API / integration tests
-- Conclusion: **Pass**
-- Evidence: `repo/phpunit.xml:11`, `repo/tests/Feature/AuthTest.php:325`, `repo/tests/Feature/CrossFacilityIsolationTest.php:24`, `repo/tests/Feature/NullFacilityDenyTest.php:331`
-
-- Logging categories / observability
-- Conclusion: **Partial Pass**
-- Evidence: `repo/app/Services/AuditService.php:35`, `repo/config/logging.php:53`, `repo/app/Console/Commands/PurgeOldAuditLogs.php:29`
-- Reasoning: domain audit logging is strong; broader operational telemetry is less specialized.
-
-- Sensitive-data leakage risk in logs / responses
-- Conclusion: **Pass**
-- Evidence: `repo/app/Services/AuditService.php:20`, `repo/tests/Feature/AuditRedactionTest.php:20`, `repo/app/Http/Controllers/Api/AuthController.php:119`, `repo/app/Http/Controllers/Api/PatientController.php:78`
-- Reasoning: redaction/masking are in place and tested; session cookie is encrypted and HttpOnly.
+- Unit tests:
+  - Conclusion: **Pass**
+  - Evidence: `repo/tests/Unit/RentalPricingTest.php`, `repo/tests/Unit/DeduplicationServiceTest.php`, `repo/tests/Unit/SafetyStockTest.php`
+- API / integration tests:
+  - Conclusion: **Pass**
+  - Evidence: `repo/tests/Feature/AuthTest.php:17`, `repo/tests/Feature/CrossFacilityIsolationTest.php:42`, `repo/tests/Feature/ServiceOrderTest.php:303`, `repo/tests/Feature/DataVersioningCoverageTest.php:101`
+- Logging categories / observability:
+  - Conclusion: **Partial Pass**
+  - Evidence: `repo/app/Services/AuditService.php:35`, `repo/config/logging.php:55`
+  - Note: Security/domain audit logging is strong; broader operational logging taxonomy remains mostly framework-default.
+- Sensitive-data leakage risk in logs / responses:
+  - Conclusion: **Pass**
+  - Evidence: `repo/app/Services/AuditService.php:20`, `repo/tests/Feature/AuditRedactionTest.php:20`, `repo/tests/Feature/SecurityTest.php:39`
 
 ## 8. Test Coverage Assessment (Static Audit)
 
 ### 8.1 Test Overview
-- Unit and feature tests exist and are configured.
-- Frontend tests exist (Vitest).
-- Test entry points/docs are present.
-- Evidence: `repo/phpunit.xml:7`, `repo/vitest.config.js:12`, `repo/run_tests.sh:27`, `repo/README.md:237`
+- Unit tests and API/integration tests exist: **Yes**
+  - Evidence: `repo/tests/Unit`, `repo/tests/Feature`
+- Test frameworks:
+  - PHPUnit/Laravel: `repo/phpunit.xml:2`
+  - Vitest: `repo/package.json:8`
+- Test entry points:
+  - `repo/composer.json:51`
+  - `repo/package.json:8`
+  - `repo/run_tests.sh:41`
+- Documentation includes test commands:
+  - `repo/README.md:79`
 
 ### 8.2 Coverage Mapping Table
 
 | Requirement / Risk Point | Mapped Test Case(s) | Key Assertion / Fixture / Mock | Coverage Assessment | Gap | Minimum Test Addition |
 |---|---|---|---|---|---|
-| Login throttle + CAPTCHA | `repo/tests/Feature/AuthTest.php:61`, `repo/tests/Feature/AuthTest.php:85`, `repo/tests/Feature/AuthTest.php:199` | lockout/captcha checks | sufficient | none major | maintain regression checks |
-| Workstation-keyed throttling | `repo/tests/Feature/AuthTest.php:325`, `repo/tests/Feature/AuthTest.php:342`, `repo/tests/Feature/AuthTest.php:362`, `repo/tests/Feature/AuthTest.php:384` | device_id persistence, cross-IP same device, IP fallback | sufficient | none major | add route-matrix auth throttle smoke test if desired |
-| Inactivity timeout | `repo/tests/Feature/InactivityTimeoutTest.php:26`, `repo/tests/Feature/AuthEdgeCasesTest.php:23` | timeout/refresh behavior | sufficient | deployment topology remains manual | staging checklist for proxy/TLS/cookie behavior |
-| 401 unauthenticated | `repo/tests/Feature/ObjectAuthorizationTest.php:71` | protected-route 401 assertions | sufficient | not exhaustive | generated route matrix |
-| 403 unauthorized roles | `repo/tests/Feature/ObjectAuthorizationTest.php:90`, `repo/tests/Feature/SecurityTest.php:71` | role-denied assertions | sufficient | not fully exhaustive | per-role route matrix |
-| Tenant isolation null-facility | `repo/tests/Feature/NullFacilityDenyTest.php:331`, `repo/tests/Feature/NullFacilityDenyTest.php:343`, `repo/tests/Feature/NullFacilityDenyTest.php:372`, `repo/tests/Feature/NullFacilityDenyTest.php:392` | empty/deny behavior on key fixed paths | sufficient | none major | maintain regression suite |
-| Inventory isolation | `repo/tests/Feature/InventoryIsolationTest.php:95`, `repo/tests/Feature/InventoryIsolationTest.php:113`, `repo/tests/Feature/InventoryIsolationTest.php:163` | stock-level/ledger/stocktake scope checks | sufficient | none major | maintain regression suite |
-| Service pricing scope | `repo/tests/Feature/ServiceCatalogTest.php:78`, `repo/tests/Feature/NullFacilityDenyTest.php:316` | cross-facility + null-facility deny | sufficient | none major | keep regression coverage |
-| Tablet review constraints | `repo/tests/Feature/TabletReviewPublicTest.php:67`, `repo/tests/Feature/TabletReviewPublicTest.php:89`, `repo/tests/Feature/ReviewTest.php:286` | max image count + moderation reason validation | sufficient | UX still manual | add browser E2E when runtime testing permitted |
+| Auth happy/invalid login | `repo/tests/Feature/AuthTest.php:17`, `repo/tests/Feature/AuthTest.php:33` | token on success; 422 on invalid credentials | sufficient | None material | Keep regression tests |
+| CAPTCHA/rate limit + inactivity timeout | `repo/tests/Feature/AuthTest.php:199`, `repo/tests/Feature/InactivityTimeoutTest.php:26` | captcha requirement + idle token expiry 401 | basically covered | Additional abuse-path breadth possible | Add more replay/edge cases if risk appetite requires |
+| 401/403 authorization baseline | `repo/tests/Feature/ObjectAuthorizationTest.php:71`, `repo/tests/Feature/SecurityTest.php:71` | unauth 401 and role 403 checks | sufficient | None material | Keep |
+| Tenant isolation / IDOR | `repo/tests/Feature/CrossFacilityIsolationTest.php:42` | cross-facility access blocked; list scoping | sufficient | Minor endpoint breadth extensions possible | Add coverage for all history endpoints |
+| Rental double-booking + overdue | `repo/tests/Feature/RentalTransactionTest.php:37`, `repo/tests/Feature/RentalTransactionTest.php:303` | booking conflict rejection and overdue checks | sufficient | True concurrent race runtime not simulated | Optional lock-contention simulation test |
+| Service-order strategies | `repo/tests/Feature/ServiceOrderTest.php:239`, `repo/tests/Feature/ServiceOrderTest.php:271`, `repo/tests/Feature/ServiceOrderTest.php:303` | lock_at_creation and deduct_at_close semantics, including addReservation non-lock ATP | sufficient | None material | Keep |
+| Versioning on create+update for mutable entities | `repo/tests/Feature/DataVersioningCoverageTest.php:101`, `repo/tests/Feature/DataVersioningCoverageTest.php:119`, `repo/tests/Feature/DataVersioningCoverageTest.php:136` | create count=1, update count=2 | sufficient | None material | Keep |
+| Sensitive audit redaction | `repo/tests/Feature/AuditRedactionTest.php:20` | `***REDACTED***` assertions | sufficient | None material | Keep |
 
 ### 8.3 Security Coverage Audit
-- Authentication: **Covered** for success/failure/CAPTCHA/timeout and workstation-keyed throttling behavior.
-- Route authorization: **Basically covered** (major surfaces), not fully exhaustive matrix.
-- Object-level authorization: **Covered** for key facility-scoped entities.
-- Tenant/data isolation: **Covered** for previously high-risk null-facility regressions.
-- Admin/internal protection: **Covered** for key privileged route groups.
+- authentication: **basically covered** (`repo/tests/Feature/AuthTest.php:17`, `repo/tests/Feature/InactivityTimeoutTest.php:26`)
+- route authorization: **covered** (`repo/tests/Feature/ObjectAuthorizationTest.php:90`)
+- object-level authorization: **covered** (`repo/tests/Feature/ObjectAuthorizationTest.php:25`, `repo/tests/Feature/CrossFacilityIsolationTest.php:53`)
+- tenant/data isolation: **covered** (`repo/tests/Feature/CrossFacilityIsolationTest.php:67`)
+- admin/internal protection: **basically covered** (`repo/tests/Feature/AuditLogTest.php:189`, `repo/tests/Feature/ObjectAuthorizationTest.php:104`)
 
 ### 8.4 Final Coverage Judgment
 - **Pass**
-- Covered: major auth/security paths, tenant isolation regressions, role/object authorization, and core business workflows.
-- Residual limitation: browser/device deployment behavior (UX and proxy/TLS nuances) remains manual-verification scope, not a static test defect.
+- Major risk areas are covered by meaningful tests, and previously identified severe strategy/versioning coverage gaps are now explicitly pinned.
 
 ## 9. Final Notes
-- Previously reported workstation-throttle and null-facility findings are now statically evidenced as addressed.
-- No Blocker/High/Medium defect is identified in this fresh static pass.
-- Conclusions remain static-only and evidence-traceable.
+- Previously open items were verified fixed in current codebase:
+  - Strategy-consistent `addReservation` behavior for `deduct_at_close`
+  - Create-path versioning for Department/Storeroom/User
+  - Stale external doc references removed/updated
+- No runtime claims were made beyond static evidence.
