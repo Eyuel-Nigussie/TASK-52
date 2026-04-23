@@ -185,7 +185,7 @@ class InventoryServiceTest extends TestCase
             'facility_id'          => $facility->id,
             'reservation_strategy' => 'deduct_at_close',
         ]);
-        $this->service->reserveForOrder($order, $item, $storeroom, 7.0);
+        $this->service->recordForClose($order, $item, $storeroom, 7.0);
 
         $this->service->closeOrderReservations($order);
 

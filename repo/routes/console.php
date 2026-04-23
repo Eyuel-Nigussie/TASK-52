@@ -8,7 +8,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Match OPERATIONS.md §7 — overdue checks every 5 minutes, low-stock refresh
+// Scheduled tasks: overdue checks every 5 minutes, low-stock refresh
 // hourly, audit purge + file checksum drill nightly.
 Schedule::command('vetops:mark-overdue-rentals')->everyFiveMinutes();
 Schedule::command('vetops:refresh-stock-levels')->hourly();

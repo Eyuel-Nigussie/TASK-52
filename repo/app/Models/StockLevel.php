@@ -14,6 +14,8 @@ class StockLevel extends Model
         'available_to_promise', 'last_stocktake_at', 'avg_daily_usage',
     ];
 
+    protected $appends = ['safety_stock'];
+
     public $timestamps = false;
 
     protected function casts(): array
@@ -38,10 +40,15 @@ class StockLevel extends Model
         return $this->belongsTo(Storeroom::class);
     }
 
+    public function getSafetyStockAttribute(): float
+    {
+        $days = $this->item->safety_stock_days ?? config('vetops.safety_stock_days', 14);
+        return round((float) $this->avg_daily_usage * (int) $days, 3);
+    }
+
     public function isBelowSafetyStock(): bool
     {
-        $safetyStock = (float) $this->avg_daily_usage * ($this->item->safety_stock_days ?? config('vetops.safety_stock_days', 14));
-        return (float) $this->on_hand <= $safetyStock;
+        return (float) $this->on_hand <= $this->getSafetyStockAttribute();
     }
 
     public function recalculateAtp(): void

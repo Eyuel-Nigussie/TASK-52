@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\DataVersioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -14,7 +15,10 @@ use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
-    public function __construct(private readonly AuditService $audit) {}
+    public function __construct(
+        private readonly AuditService $audit,
+        private readonly DataVersioningService $versioning,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -100,8 +104,16 @@ class UserController extends Controller
         $old = $user->toArray();
         $user->update($data);
         $this->audit->logModel('user.update', $user, $old, $user->fresh()->toArray());
+        $this->versioning->record($user, $old, $request->user()->id, 'Updated via API');
 
         return response()->json($user->fresh());
+    }
+
+    public function history(User $user): JsonResponse
+    {
+        $this->authorize('update', $user);
+
+        return response()->json($this->versioning->getHistory($user));
     }
 
     public function destroy(Request $request, User $user): JsonResponse

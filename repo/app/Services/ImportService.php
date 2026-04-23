@@ -30,7 +30,7 @@ class ImportService
 
     public function queueImport(UploadedFile $file, string $entityType, int $userId): CsvImport
     {
-        $fileData = $this->storage->store($file, 'imports');
+        $fileData = $this->storage->store($file, 'imports', 'local');
 
         return CsvImport::create([
             'user_id'       => $userId,

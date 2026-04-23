@@ -64,6 +64,7 @@ Route::middleware(['auth:sanctum', 'vetops.inactivity'])->group(function () {
     // The controller additionally invokes DepartmentPolicy + facility scope
     // so non-admin users only see their own facility's departments.
     Route::get('/departments', [DepartmentController::class, 'index']);
+    Route::get('/departments/{department}/history', [DepartmentController::class, 'history'])->middleware('role:system_admin,clinic_manager');
     Route::apiResource('departments', DepartmentController::class)->except(['index', 'show'])
         ->middleware(['role:system_admin,clinic_manager']);
 
@@ -73,6 +74,7 @@ Route::middleware(['auth:sanctum', 'vetops.inactivity'])->group(function () {
         Route::post('/', [UserController::class, 'store']);
         Route::get('/{user}', [UserController::class, 'show']);
         Route::put('/{user}', [UserController::class, 'update']);
+        Route::get('/{user}/history', [UserController::class, 'history']);
         Route::delete('/{user}', [UserController::class, 'destroy']);
     });
 
@@ -105,6 +107,7 @@ Route::middleware(['auth:sanctum', 'vetops.inactivity'])->group(function () {
         Route::get('/', [StoreroomController::class, 'index']);
         Route::post('/', [StoreroomController::class, 'store'])->middleware('role:system_admin,clinic_manager');
         Route::put('/{storeroom}', [StoreroomController::class, 'update'])->middleware('role:system_admin,clinic_manager');
+        Route::get('/{storeroom}/history', [StoreroomController::class, 'history'])->middleware('role:system_admin,clinic_manager');
         Route::delete('/{storeroom}', [StoreroomController::class, 'destroy'])->middleware('role:system_admin');
     });
 

@@ -16,7 +16,26 @@ const loading = ref(false);
 const createOpen = ref(false);
 const busy = ref(false);
 const error = ref('');
-const form = ref({ patient_id: '', doctor_id: '', facility_id: '', reservation_strategy: 'lock_at_creation' });
+
+function emptyForm() {
+    return {
+        patient_id: '',
+        doctor_id: '',
+        facility_id: '',
+        reservation_strategy: 'lock_at_creation',
+        items: [],
+    };
+}
+
+const form = ref(emptyForm());
+
+function addItem() {
+    form.value.items.push({ item_id: '', storeroom_id: '', quantity: 1 });
+}
+
+function removeItem(index) {
+    form.value.items.splice(index, 1);
+}
 
 const columns = [
     { key: 'id', label: 'ID' },
@@ -43,9 +62,14 @@ async function save() {
     busy.value = true;
     error.value = '';
     try {
-        await api.serviceOrders.create(form.value);
+        const payload = { ...form.value };
+        if (payload.items.length === 0) {
+            delete payload.items;
+        }
+        await api.serviceOrders.create(payload);
         notes.success('Order created.');
         createOpen.value = false;
+        form.value = emptyForm();
         await load();
     } catch (e) {
         error.value = extractErrorMessage(e, 'Create failed.');
@@ -64,6 +88,12 @@ async function closeOrder(row) {
     }
 }
 
+function openCreate() {
+    form.value = emptyForm();
+    error.value = '';
+    createOpen.value = true;
+}
+
 onMounted(load);
 
 defineExpose({ load, save, closeOrder });
@@ -73,7 +103,7 @@ defineExpose({ load, save, closeOrder });
     <section>
         <div class="flex items-center justify-between mb-4">
             <h1 class="text-2xl font-semibold">Service Orders</h1>
-            <AppButton @click="createOpen = true">+ New order</AppButton>
+            <AppButton @click="openCreate">+ New order</AppButton>
         </div>
         <DataTable :columns="columns" :rows="rows" :loading="loading">
             <template #cell-status="{ row }"><StatusBadge :status="row.status" /></template>
@@ -104,6 +134,64 @@ defineExpose({ load, save, closeOrder });
                         <option value="deduct_at_close">Deduct on close</option>
                     </select>
                 </div>
+
+                <!-- Line items -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium">Inventory line items</span>
+                        <button type="button" class="text-xs text-blue-600 underline" data-test="add-item" @click="addItem">+ Add item</button>
+                    </div>
+                    <div v-if="form.items.length === 0" class="text-xs text-gray-400 italic">No items added — order will be created with no reservations.</div>
+                    <div
+                        v-for="(line, i) in form.items"
+                        :key="i"
+                        class="flex gap-2 items-center mt-1"
+                        :data-test="`line-item-${i}`"
+                    >
+                        <div class="flex-1">
+                            <label class="sr-only">Item ID</label>
+                            <input
+                                v-model.number="line.item_id"
+                                type="number"
+                                placeholder="Item ID"
+                                class="block w-full border rounded px-2 py-1 text-sm"
+                                required
+                                :data-test="`item-id-${i}`"
+                            />
+                        </div>
+                        <div class="flex-1">
+                            <label class="sr-only">Storeroom ID</label>
+                            <input
+                                v-model.number="line.storeroom_id"
+                                type="number"
+                                placeholder="Storeroom ID"
+                                class="block w-full border rounded px-2 py-1 text-sm"
+                                required
+                                :data-test="`storeroom-id-${i}`"
+                            />
+                        </div>
+                        <div class="w-20">
+                            <label class="sr-only">Quantity</label>
+                            <input
+                                v-model.number="line.quantity"
+                                type="number"
+                                min="0.001"
+                                step="any"
+                                placeholder="Qty"
+                                class="block w-full border rounded px-2 py-1 text-sm"
+                                required
+                                :data-test="`quantity-${i}`"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            class="text-red-500 text-xs"
+                            :data-test="`remove-item-${i}`"
+                            @click="removeItem(i)"
+                        >&times;</button>
+                    </div>
+                </div>
+
                 <div v-if="error" class="text-sm text-red-600" data-test="so-error">{{ error }}</div>
                 <div class="flex justify-end gap-2">
                     <AppButton type="button" variant="secondary" @click="createOpen = false">Cancel</AppButton>

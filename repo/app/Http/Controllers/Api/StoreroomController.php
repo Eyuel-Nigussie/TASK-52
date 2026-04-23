@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ScopesByFacility;
 use App\Http\Controllers\Controller;
 use App\Models\Storeroom;
 use App\Services\AuditService;
+use App\Services\DataVersioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,7 +16,10 @@ class StoreroomController extends Controller
 {
     use ScopesByFacility;
 
-    public function __construct(private readonly AuditService $audit) {}
+    public function __construct(
+        private readonly AuditService $audit,
+        private readonly DataVersioningService $versioning,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -69,8 +73,16 @@ class StoreroomController extends Controller
         $old = $storeroom->toArray();
         $storeroom->update($data);
         $this->audit->logModel('storeroom.update', $storeroom, $old, $storeroom->fresh()->toArray());
+        $this->versioning->record($storeroom, $old, $request->user()->id, 'Updated via API');
 
         return response()->json($storeroom->fresh());
+    }
+
+    public function history(Storeroom $storeroom): JsonResponse
+    {
+        $this->authorize('view', $storeroom);
+
+        return response()->json($this->versioning->getHistory($storeroom));
     }
 
     public function destroy(Storeroom $storeroom): JsonResponse

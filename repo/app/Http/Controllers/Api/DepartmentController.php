@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\ScopesByFacility;
 use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Services\AuditService;
+use App\Services\DataVersioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,7 +16,10 @@ class DepartmentController extends Controller
 {
     use ScopesByFacility;
 
-    public function __construct(private readonly AuditService $audit) {}
+    public function __construct(
+        private readonly AuditService $audit,
+        private readonly DataVersioningService $versioning,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -72,8 +76,16 @@ class DepartmentController extends Controller
         $old = $department->toArray();
         $department->update($data);
         $this->audit->logModel('department.update', $department, $old, $department->fresh()->toArray());
+        $this->versioning->record($department, $old, $request->user()->id, 'Updated via API');
 
         return response()->json($department->fresh());
+    }
+
+    public function history(Department $department): JsonResponse
+    {
+        $this->authorize('view', $department);
+
+        return response()->json($this->versioning->getHistory($department));
     }
 
     public function destroy(Request $request, Department $department): JsonResponse

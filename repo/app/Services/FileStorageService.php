@@ -10,7 +10,7 @@ use RuntimeException;
 
 class FileStorageService
 {
-    public function store(UploadedFile $file, string $directory): array
+    public function store(UploadedFile $file, string $directory, string $disk = 'public'): array
     {
         $checksum = hash_file('sha256', $file->getRealPath());
         if ($checksum === false) {
@@ -21,12 +21,13 @@ class FileStorageService
         $fileName = $checksum . '.' . $extension;
         $path = $directory . '/' . $fileName;
 
-        if (!Storage::exists($path)) {
-            Storage::putFileAs($directory, $file, $fileName);
+        if (!Storage::disk($disk)->exists($path)) {
+            Storage::disk($disk)->putFileAs($directory, $file, $fileName);
         }
 
         return [
             'path'      => $path,
+            'disk'      => $disk,
             'file_name' => $file->getClientOriginalName(),
             'mime_type' => $file->getMimeType() ?? 'application/octet-stream',
             'file_size' => $file->getSize(),
@@ -34,23 +35,23 @@ class FileStorageService
         ];
     }
 
-    public function verify(string $path, string $expectedChecksum): bool
+    public function verify(string $path, string $expectedChecksum, string $disk = 'public'): bool
     {
-        if (!Storage::exists($path)) {
+        if (!Storage::disk($disk)->exists($path)) {
             return false;
         }
-        $fullPath = Storage::path($path);
+        $fullPath = Storage::disk($disk)->path($path);
         $actual = hash_file('sha256', $fullPath);
         return $actual === $expectedChecksum;
     }
 
-    public function delete(string $path): bool
+    public function delete(string $path, string $disk = 'public'): bool
     {
-        return Storage::delete($path);
+        return Storage::disk($disk)->delete($path);
     }
 
-    public function url(string $path): string
+    public function url(string $path, string $disk = 'public'): string
     {
-        return Storage::url($path);
+        return Storage::disk($disk)->url($path);
     }
 }

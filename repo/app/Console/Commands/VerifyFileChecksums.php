@@ -32,13 +32,13 @@ class VerifyFileChecksums extends Command
     protected $description = 'Verify stored file checksums match on-disk bytes. Reports drift/loss.';
 
     /**
-     * Checksum-bearing sources: [model class, path column, checksum column, short label].
+     * Checksum-bearing sources: [model class, path column, checksum column, short label, disk].
      */
     private const SOURCES = [
-        [CsvImport::class,    'file_path',  'file_checksum',  'CsvImport'],
-        [ReviewImage::class,  'file_path',  'checksum',       'ReviewImage'],
-        [ContentMedia::class, 'file_path',  'checksum',       'ContentMedia'],
-        [RentalAsset::class,  'photo_path', 'photo_checksum', 'RentalAsset'],
+        [CsvImport::class,    'file_path',  'file_checksum',  'CsvImport',    'local'],
+        [ReviewImage::class,  'file_path',  'checksum',       'ReviewImage',  'public'],
+        [ContentMedia::class, 'file_path',  'checksum',       'ContentMedia', 'public'],
+        [RentalAsset::class,  'photo_path', 'photo_checksum', 'RentalAsset',  'public'],
     ];
 
     public function handle(): int
@@ -50,8 +50,8 @@ class VerifyFileChecksums extends Command
         $missing = 0;
         $mismatched = 0;
 
-        foreach (self::SOURCES as [$class, $pathColumn, $checksumColumn, $label]) {
-            [$c, $m, $mm] = $this->verifyModel($class, $pathColumn, $checksumColumn, $label, $cutoff);
+        foreach (self::SOURCES as [$class, $pathColumn, $checksumColumn, $label, $disk]) {
+            [$c, $m, $mm] = $this->verifyModel($class, $pathColumn, $checksumColumn, $label, $cutoff, $disk);
             $checked += $c;
             $missing += $m;
             $mismatched += $mm;
@@ -66,7 +66,7 @@ class VerifyFileChecksums extends Command
      * @param class-string<Model> $class
      * @return array{int, int, int} [checked, missing, mismatched]
      */
-    private function verifyModel(string $class, string $pathColumn, string $checksumColumn, string $label, ?\DateTimeInterface $cutoff): array
+    private function verifyModel(string $class, string $pathColumn, string $checksumColumn, string $label, ?\DateTimeInterface $cutoff, string $disk = 'local'): array
     {
         $checked = 0;
         $missing = 0;
@@ -87,13 +87,13 @@ class VerifyFileChecksums extends Command
             }
             $checked++;
 
-            if (!Storage::exists($path)) {
+            if (!Storage::disk($disk)->exists($path)) {
                 $missing++;
                 $this->warn("Missing file for {$label} #{$row->getKey()}: {$path}");
                 continue;
             }
 
-            $actual = hash('sha256', Storage::get($path));
+            $actual = hash('sha256', Storage::disk($disk)->get($path));
             if (!hash_equals((string) $expected, $actual)) {
                 $mismatched++;
                 $this->error("Checksum mismatch for {$label} #{$row->getKey()}: expected {$expected}, got {$actual}");

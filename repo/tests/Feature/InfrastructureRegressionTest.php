@@ -323,9 +323,9 @@ class InfrastructureRegressionTest extends TestCase
 
     public function test_verify_file_checksums_flags_tampered_media(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
 
-        Storage::put('media/good.bin', 'original-content');
+        Storage::disk('public')->put('media/good.bin', 'original-content');
         ContentMedia::create([
             'content_item_id' => \App\Models\ContentItem::factory()->create()->id,
             'file_path'       => 'media/good.bin',
@@ -336,7 +336,7 @@ class InfrastructureRegressionTest extends TestCase
             'sort_order'      => 0,
         ]);
 
-        Storage::put('media/tampered.bin', 'tampered-content');
+        Storage::disk('public')->put('media/tampered.bin', 'tampered-content');
         ContentMedia::create([
             'content_item_id' => \App\Models\ContentItem::factory()->create()->id,
             'file_path'       => 'media/tampered.bin',
@@ -354,10 +354,10 @@ class InfrastructureRegressionTest extends TestCase
 
     public function test_verify_file_checksums_covers_review_images(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
 
         $review = VisitReview::factory()->create();
-        Storage::put('reviews/happy.jpg', 'payload');
+        Storage::disk('public')->put('reviews/happy.jpg', 'payload');
         ReviewImage::create([
             'review_id'  => $review->id,
             'file_path'  => 'reviews/happy.jpg',

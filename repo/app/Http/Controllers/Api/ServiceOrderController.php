@@ -94,14 +94,17 @@ class ServiceOrderController extends Controller
             'created_by'           => $user->id,
         ]);
 
-        if ($data['reservation_strategy'] === 'lock_at_creation' && !empty($data['items'])) {
-            foreach ($data['items'] as $itemData) {
-                $this->inventoryService->reserveForOrder(
-                    $order,
-                    InventoryItem::findOrFail($itemData['item_id']),
-                    Storeroom::findOrFail($itemData['storeroom_id']),
-                    (float) $itemData['quantity'],
-                );
+        foreach ($data['items'] ?? [] as $itemData) {
+            $item      = InventoryItem::findOrFail($itemData['item_id']);
+            $storeroom = Storeroom::findOrFail($itemData['storeroom_id']);
+            $qty       = (float) $itemData['quantity'];
+
+            if ($data['reservation_strategy'] === 'lock_at_creation') {
+                $this->inventoryService->reserveForOrder($order, $item, $storeroom, $qty);
+            } else {
+                // deduct_at_close: record the line item without locking ATP; stock is
+                // deducted from on_hand when the order is closed.
+                $this->inventoryService->recordForClose($order, $item, $storeroom, $qty);
             }
         }
 

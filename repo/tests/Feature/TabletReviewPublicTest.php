@@ -15,7 +15,7 @@ use Tests\TestCase;
 
 /**
  * The tablet review submit flow is intentionally unauthenticated.
- * See docs/RBAC.md §6 (Notable Exceptions) and routes/api.php public block.
+ * See routes/api.php public block for the route declaration.
  * These tests pin that contract — a regression to auth-required would fail them.
  */
 class TabletReviewPublicTest extends TestCase

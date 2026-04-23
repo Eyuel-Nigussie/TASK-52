@@ -38,16 +38,16 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: vetops
-      MYSQL_USER: vetops
-      MYSQL_PASSWORD: secret
-      MYSQL_ROOT_PASSWORD: root_secret
+      MYSQL_DATABASE: ${DB_DATABASE:-vetops}
+      MYSQL_USER: ${DB_USERNAME:-vetops}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-CHANGE_ME}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-CHANGE_ME_ROOT}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "vetops", "-psecret"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${DB_USERNAME:-vetops}", "-p${DB_PASSWORD:-CHANGE_ME}"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -312,16 +312,31 @@ class InventoryService
         ]);
     }
 
+    public function recordForClose(ServiceOrder $order, InventoryItem $item, Storeroom $storeroom, float $quantity): OrderInventoryReservation
+    {
+        // deduct_at_close: record intent without touching reserved or ATP.
+        // The actual on_hand deduction happens in closeOrderReservations().
+        if ((int) $storeroom->facility_id !== (int) $order->facility_id) {
+            throw ValidationException::withMessages([
+                'storeroom_id' => ['Storeroom belongs to a different facility than this service order.'],
+            ]);
+        }
+
+        return OrderInventoryReservation::create([
+            'service_order_id'  => $order->id,
+            'item_id'           => $item->id,
+            'storeroom_id'      => $storeroom->id,
+            'quantity_reserved' => $quantity,
+            'status'            => 'reserved',
+        ]);
+    }
+
     public function closeOrderReservations(ServiceOrder $order): void
     {
         DB::transaction(function () use ($order) {
             foreach ($order->reservations()->where('status', 'reserved')->get() as $reservation) {
                 $level = $this->getOrCreateLevel($reservation->item_id, $reservation->storeroom_id);
 
-                // Both strategies consume on_hand at close: deduct_at_close was
-                // optimistic (never touched on_hand at creation); lock_at_creation
-                // locked ATP by incrementing reserved but never reduced on_hand —
-                // the actual physical deduction happens here in both cases.
                 $this->issue(
                     InventoryItem::find($reservation->item_id),
                     Storeroom::find($reservation->storeroom_id),
@@ -332,8 +347,12 @@ class InventoryService
                     "Auto-deduct on order close"
                 );
 
-                $level->decrement('reserved', (float) $reservation->quantity_reserved);
-                $level->recalculateAtp();
+                // lock_at_creation incremented reserved at order creation; release it now.
+                // deduct_at_close never incremented reserved, so do not decrement it.
+                if ($order->reservation_strategy === 'lock_at_creation') {
+                    $level->decrement('reserved', (float) $reservation->quantity_reserved);
+                    $level->recalculateAtp();
+                }
 
                 $reservation->update([
                     'quantity_deducted' => $reservation->quantity_reserved,

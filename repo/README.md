@@ -59,6 +59,9 @@ cp .env.example .env
 
 # Build images, run migrations, start all services
 docker-compose up -d --build
+
+# Create the public storage symlink so uploaded media is web-accessible
+docker-compose exec app php artisan storage:link
 ```
 
 The helper script `./start.sh` wraps the same `docker-compose up` with pre-flight port checks and a health-probe loop, and is equivalent to the command above for normal use.
@@ -340,7 +343,7 @@ The following controls are implemented across the application:
 
 - **Encrypted PII at rest** — sensitive patient fields (phone number, owner contact) use application-level encryption via `VETOPS_ENCRYPTION_KEY` with masked output in API responses.
 - **Phone number masking** — phone numbers are returned as `***-***-XXXX` in listing endpoints; full values are only exposed to authorised roles.
-- **Role-based access control** — every authenticated route is gated by Sanctum and the custom `role:` middleware (`App\Http\Middleware\RoleMiddleware`), with object-level decisions delegated to policies registered in `App\Providers\AuthServiceProvider` (see [`docs/RBAC.md`](docs/RBAC.md)).
+- **Role-based access control** — every authenticated route is gated by Sanctum and the custom `role:` middleware (`App\Http\Middleware\RoleMiddleware`), with object-level decisions delegated to policies registered in `App\Providers\AuthServiceProvider`.
 - **Rate limiting** — login endpoint is throttled to 10 attempts per 10-minute window; CAPTCHA challenge triggers after 5 consecutive failures.
 - **Inactivity timeout** — API tokens become invalid after 15 minutes of inactivity, enforced by the `vetops.inactivity` middleware.
 - **Session encryption** — session payloads are encrypted at rest (`SESSION_ENCRYPT=true`).
