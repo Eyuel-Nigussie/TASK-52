@@ -32,12 +32,12 @@ class PatientPolicy
 
     public function create(User $user): bool
     {
-        return true;
+        return $user->isClinicalRole();
     }
 
     public function update(User $user, Patient $patient): bool
     {
-        return $this->view($user, $patient);
+        return $user->isClinicalRole() && $this->view($user, $patient);
     }
 
     public function delete(User $user, Patient $patient): bool

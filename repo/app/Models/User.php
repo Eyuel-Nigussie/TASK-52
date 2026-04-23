@@ -59,6 +59,11 @@ class User extends Authenticatable
         return in_array($this->role, ['system_admin', 'clinic_manager'], true);
     }
 
+    public function isClinicalRole(): bool
+    {
+        return in_array($this->role, ['technician_doctor', 'clinic_manager', 'system_admin'], true);
+    }
+
     public function getPhone(): ?string
     {
         if ($this->phone_encrypted === null) {

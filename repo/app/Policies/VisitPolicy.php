@@ -27,11 +27,11 @@ class VisitPolicy
 
     public function create(User $user): bool
     {
-        return true;
+        return $user->isClinicalRole();
     }
 
     public function update(User $user, Visit $visit): bool
     {
-        return $this->view($user, $visit);
+        return $user->isClinicalRole() && $this->view($user, $visit);
     }
 }

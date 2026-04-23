@@ -6,14 +6,17 @@ namespace Tests\Feature;
 
 use App\Models\AuditLog;
 use App\Models\ContentItem;
+use App\Models\Doctor;
 use App\Models\Facility;
 use App\Models\InventoryItem;
 use App\Models\MergeRequest;
 use App\Models\Patient;
 use App\Models\RentalAsset;
 use App\Models\RentalTransaction;
+use App\Models\ServiceOrder;
 use App\Models\Storeroom;
 use App\Models\User;
+use App\Models\Visit;
 use App\Models\VisitReview;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
@@ -204,5 +207,80 @@ class PolicyAuthorizationTest extends TestCase
 
         $this->assertTrue($admin->can('delete', $storeroom));
         $this->assertFalse($manager->can('delete', $storeroom));
+    }
+
+    public function test_non_clinical_roles_cannot_create_patients(): void
+    {
+        $clerk   = User::factory()->inventoryClerk()->create();
+        $editor  = User::factory()->contentEditor()->create();
+        $approver = User::factory()->contentApprover()->create();
+
+        foreach ([$clerk, $editor, $approver] as $user) {
+            $this->assertFalse($user->can('create', Patient::class),
+                "Role {$user->role} must not create patients.");
+        }
+    }
+
+    public function test_clinical_roles_can_create_patients(): void
+    {
+        $facility = Facility::factory()->create();
+        $tech    = User::factory()->create(['role' => 'technician_doctor', 'facility_id' => $facility->id]);
+        $manager = User::factory()->manager()->create(['facility_id' => $facility->id]);
+        $admin   = User::factory()->admin()->create();
+
+        $this->assertTrue($tech->can('create', Patient::class));
+        $this->assertTrue($manager->can('create', Patient::class));
+        $this->assertTrue($admin->can('create', Patient::class));
+    }
+
+    public function test_non_clinical_roles_cannot_update_patients(): void
+    {
+        $facility = Facility::factory()->create();
+        $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
+        $clerk    = User::factory()->inventoryClerk()->create(['facility_id' => $facility->id]);
+        $editor   = User::factory()->contentEditor()->create(['facility_id' => $facility->id]);
+
+        $this->assertFalse($clerk->can('update', $patient));
+        $this->assertFalse($editor->can('update', $patient));
+    }
+
+    public function test_non_clinical_roles_cannot_create_visits(): void
+    {
+        $clerk  = User::factory()->inventoryClerk()->create();
+        $editor = User::factory()->contentEditor()->create();
+
+        $this->assertFalse($clerk->can('create', Visit::class));
+        $this->assertFalse($editor->can('create', Visit::class));
+    }
+
+    public function test_clinical_roles_can_create_and_update_visits(): void
+    {
+        $facility = Facility::factory()->create();
+        $doctor   = Doctor::factory()->create(['facility_id' => $facility->id]);
+        $patient  = Patient::factory()->create(['facility_id' => $facility->id]);
+        $visit    = Visit::factory()->create(['facility_id' => $facility->id, 'doctor_id' => $doctor->id, 'patient_id' => $patient->id]);
+        $tech     = User::factory()->create(['role' => 'technician_doctor', 'facility_id' => $facility->id]);
+
+        $this->assertTrue($tech->can('create', Visit::class));
+        $this->assertTrue($tech->can('update', $visit));
+    }
+
+    public function test_non_clinical_roles_cannot_create_service_orders(): void
+    {
+        $clerk  = User::factory()->inventoryClerk()->create();
+        $editor = User::factory()->contentEditor()->create();
+
+        $this->assertFalse($clerk->can('create', ServiceOrder::class));
+        $this->assertFalse($editor->can('create', ServiceOrder::class));
+    }
+
+    public function test_non_clinical_roles_denied_at_route_level_for_clinical_endpoints(): void
+    {
+        $this->actingAsInventoryClerk();
+
+        // Non-clinical role must get 403 from route-role middleware on clinical create/write routes.
+        $this->postJson('/api/patients', ['name' => 'Test'])->assertStatus(403);
+        $this->postJson('/api/visits', ['visit_date' => now()->toDateString()])->assertStatus(403);
+        $this->postJson('/api/service-orders', [])->assertStatus(403);
     }
 }
